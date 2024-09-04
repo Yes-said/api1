@@ -53,10 +53,10 @@ app.post("/login", async (req, res) => {
           jwt.sign({ 
             email: userDoc.email, 
             id: userDoc._id, 
-         }, jwtSecret, {}, (err, token) => {
+         }, jwtSecret, { expiresIn: '1h' }, (err, token) => {
               if (err) throw err;
 
-              res.cookie("token", token).json(userDoc);
+              res.cookie("token", token, { httpOnly: true }).json(userDoc);
           });
       } else {
           res.status(422).json("pass not ok");
@@ -87,7 +87,7 @@ res.cookie("token", "").json(true);
 app.post("/courses", (req, res) => {
     const { token } = req.cookies;
     const {
-        name,title, department,
+        name,courseName, department,
         year, units, phone, admission,
         unitsEnrolled, gender
     } = req.body;
@@ -98,7 +98,7 @@ app.post("/courses", (req, res) => {
     }
         const courseDoc = await Course.create({
             owner: userData.id,
-            name,title, department,
+            name,courseName, department,
             year, units, phone, admission,
             unitsEnrolled, gender
         });
@@ -128,7 +128,7 @@ res.json(await Course.findById(id));
 app.put("/courses", async (req,res) => {
     const {token} = req.cookies;
     const {
-        id, name,title,department,
+        id, name,courseName,department,
         year,units,phone,admission,
         unitsEnrolled,gender
     } = req.body;
@@ -137,7 +137,7 @@ app.put("/courses", async (req,res) => {
         const courseDoc = await Course.findById(id);
 if (userData.id === courseDoc.owner.toString()) {
     courseDoc.set({
-        name,title,department,
+        name,courseName,department,
        year,units,phone,admission,
         unitsEnrolled,gender
 
