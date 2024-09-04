@@ -66,22 +66,21 @@ app.post("/login", async (req, res) => {
   }
 });
 
-app.get("/profile", (req,res) => {
-    const {token} = req.cookies;
-    if (token) {
-jwt.verify(token, jwtSecret, {}, async (err, userData) => {
-if (err) throw err;
-const {name,email,_id} = await User.findById(userData.id);
-res.json({name,email,_id});
-});
-    } else {
-res.json(null);
+app.get("/profile", (req, res) => {
+    const { token } = req.cookies;
+    if (!token) {
+        return res.status(401).json({ error: 'Token not provided' });
     }
+
+    jwt.verify(token, jwtSecret, {}, async (err, userData) => {
+        if (err) {
+            return res.status(403).json({ error: 'Invalid token' });
+        }
+        const { name, email, _id } = await User.findById(userData.id);
+        res.json({ name, email, _id });
+    });
 });
 
-app.post("/logout", (req,res) => {
-res.cookie("token", "").json(true);
-});
 
 
 app.post("/courses", (req, res) => {
@@ -107,15 +106,30 @@ app.post("/courses", (req, res) => {
 });
 
 
-
-app.get("/user-courses", (req,res) => {
-    const {token} = req.cookies;
+app.get("/user-courses", (req, res) => {
+    const { token } = req.cookies;
+    
     jwt.verify(token, jwtSecret, {}, async (err, userData) => {
-        const {id} = userData;
-        res.json( await Course.find({owner:id}) );
+        if (err) {
+            console.error("JWT verification error:", err);
+            return res.status(401).json({ error: 'Invalid token or session expired' });
+        }
+
+        const { id } = userData;
+        if (!id) {
+            return res.status(400).json({ error: 'User ID not found' });
+        }
+
+        try {
+            const courses = await Course.find({ owner: id });
+            res.json(courses);
+        } catch (error) {
+            console.error("Database query error:", error);
+            res.status(500).json({ error: 'Failed to retrieve courses' });
+        }
     });
-   
 });
+
 
 
 
