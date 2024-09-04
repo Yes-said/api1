@@ -17,8 +17,15 @@ app.use(express.json());
 app.use(cookieParser());
 app.use(cors({
     credentials: true,
-    origin: ['http://localhost:5173', 'https://kimcresults-ac-ke.vercel.app'],
+    origin: (origin, callback) => {
+        if (!origin || ['http://localhost:5173', 'https://kimcresults-ac-ke.vercel.app'].includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
 }));
+
 
 
 mongoose.connect(process.env.MONGO_URL);
@@ -43,27 +50,29 @@ try {
 
 });
 
-
 app.post("/login", async (req, res) => {
-  const { email, password } = req.body;
-  const userDoc = await User.findOne({ email });
-  if (userDoc) {
-      const passOK = bcrypt.compareSync(password, userDoc.password);
-      if (passOK) {
-          jwt.sign({ 
-            email: userDoc.email, 
-            id: userDoc._id, 
-         }, jwtSecret, {}, (err, token) => {
-              if (err) throw err;
-
-              res.cookie("token", token).json(userDoc);
-          });
-      } else {
-          res.status(422).json("pass not ok");
-      }
-  } else {
-      res.json("not found");
-  }
+    const { email, password } = req.body;
+    const userDoc = await User.findOne({ email });
+    if (userDoc) {
+        const passOK = bcrypt.compareSync(password, userDoc.password);
+        if (passOK) {
+            jwt.sign({
+                email: userDoc.email,
+                id: userDoc._id,
+            }, jwtSecret, {}, (err, token) => {
+                if (err) throw err;
+                res.cookie("token", token, {
+                    httpOnly: true,
+                    secure: true, // Set to true if your environment is HTTPS
+                    sameSite: 'None', // Required for cross-site requests
+                }).json(userDoc);
+            });
+        } else {
+            res.status(422).json("pass not ok");
+        }
+    } else {
+        res.json("not found");
+    }
 });
 
 app.get("/profile", (req,res) => {
@@ -79,8 +88,12 @@ res.json(null);
     }
 });
 
-app.post("/logout", (req,res) => {
-res.cookie("token", "").json(true);
+app.post("/logout", (req, res) => {
+    res.cookie("token", "", {
+        httpOnly: true,
+        secure: true, // Set to true if your environment is HTTPS
+        sameSite: 'None', // Required for cross-site requests
+    }).json(true);
 });
 
 
@@ -156,3 +169,4 @@ app.get("/courses", async (req,res) => {
 
 
 app.listen(4000);
+
