@@ -169,4 +169,3 @@ app.get("/courses", async (req,res) => {
 
 
 app.listen(4000);
-
