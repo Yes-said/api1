@@ -28,6 +28,7 @@ app.use(cors({
 
 
 
+
 mongoose.connect(process.env.MONGO_URL);
 
 app.get("/test", (req, res) => {
