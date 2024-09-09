@@ -6,9 +6,9 @@ const bcrypt = require("bcryptjs")
 require("dotenv").config()
 const User = require("./models/User.js");
 const Course = require("./models/Course.js");
+const Results = require('./models/Results'); // Import Results model
 const cookieParser = require("cookie-parser");
-
-
+const multer = require('multer');
 const app = express();
 const bcryptSalt = bcrypt.genSaltSync(10);
 const jwtSecret = "yujlkjhfgdsrzxdtcfwgihopjmjjjnibuvyxrsc";
@@ -36,12 +36,13 @@ res.json("test ok");
 });
 
 app.post("/register", async (req, res) => {
-const{name,email,password} = req.body;
+const{name,email,password,role} = req.body;
 try {
     const userDoc = await User.create({
         name,
         email,
         password:bcrypt.hashSync(password,bcryptSalt),
+        role, // Save role
     });
     res.json({userDoc});
 } catch (e) {
@@ -60,6 +61,7 @@ app.post("/login", async (req, res) => {
             jwt.sign({
                 email: userDoc.email,
                 id: userDoc._id,
+                role: userDoc.role, // Include role in the token
             }, jwtSecret, {}, (err, token) => {
                 if (err) throw err;
                 res.cookie("token", token, {
@@ -167,6 +169,47 @@ app.get("/courses", async (req,res) => {
     res.json( await Course.find() );
 
 })
+
+
+app.get("/result", async (req, res) => {
+    try {
+        const results = await Results.find(); // Fetch results from Results collection
+        res.json(results);
+    } catch (err) {
+        res.status(500).json({ error: "Failed to fetch results" });
+    }
+});
+
+
+const upload = multer({ dest: 'uploads/' }); // Adjust the destination as needed
+
+app.post('/upload-results', upload.single('pdfFile'), async (req, res) => {
+    
+    const { studentName, registrationNumber, course, units, marks } = req.body;
+    const pdfFile = req.file;
+
+    if (!pdfFile) {
+        return res.status(400).json({ error: "PDF file is required" });
+    }
+
+    try {
+        // Save the result and the file information to the Results collection
+        const result = await Results.create({
+            studentName,
+            registrationNumber,
+            course,
+            units,
+            marks,
+            pdf: pdfFile.path,
+        });
+
+        res.json({ success: true, result });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Failed to upload results" });
+    }
+});
+
 
 
 app.listen(4000);
