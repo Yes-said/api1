@@ -53,11 +53,16 @@ try {
 });
 
 app.post("/login", async (req, res) => {
-    const { email, password } = req.body;
+    const { email, password, role } = req.body; // Include role in the request body
     const userDoc = await User.findOne({ email });
     if (userDoc) {
         const passOK = bcrypt.compareSync(password, userDoc.password);
         if (passOK) {
+            // Check if the provided role matches the registered role
+            if (userDoc.role !== role) {
+                return res.status(403).json("Permission denied. Please login with the correct role.");
+            }
+
             jwt.sign({
                 email: userDoc.email,
                 id: userDoc._id,
@@ -71,12 +76,13 @@ app.post("/login", async (req, res) => {
                 }).json(userDoc);
             });
         } else {
-            res.status(422).json("pass not ok");
+            res.status(422).json("Incorrect password.");
         }
     } else {
-        res.json("not found");
+        res.status(404).json("User not found.");
     }
 });
+
 
 app.get("/profile", (req,res) => {
     const {token} = req.cookies;
