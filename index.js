@@ -2,12 +2,13 @@ const express = require('express');
 const cors = require('cors');
 const mongoose = require('mongoose');
 const jwt = require("jsonwebtoken");
-const bcrypt = require("bcryptjs")
+const bcrypt = require("bcryptjs");
 const crypto = require("crypto"); // For generating reset tokens
-require("dotenv").config()
+require("dotenv").config();
 const nodemailer = require('nodemailer'); // For sending emails
 const User = require("./models/User.js");
 const Course = require("./models/Course.js");
+const News = require('./models/News'); // Adjust the path as necessary
 const Results = require('./models/Results'); // Import Results model
 const cookieParser = require("cookie-parser");
 const multer = require('multer');
@@ -27,10 +28,8 @@ app.use(cors({
             callback(new Error('Not allowed by CORS'));
         }
     },
+    allowedHeaders: ['Content-Type', 'Authorization'],
 }));
-
-
-
 
 mongoose.connect(process.env.MONGO_URL);
 
@@ -58,9 +57,9 @@ app.post("/forgot-password", async (req, res) => {
     user.resetTokenExpiry = Date.now() + 3600000; // Token expires in 1 hour
     await user.save();
 
-    const  resetLink = `http://localhost:5173/reset-password/${resetToken}`;
+    const resetLink = `http://localhost:5173/reset-password/${resetToken}`;
 
- transporter.sendMail({
+    transporter.sendMail({
         from: process.env.EMAIL,
         to: user.email,
         subject: "Password Reset",
@@ -91,26 +90,23 @@ app.post("/reset-password/:token", async (req, res) => {
     res.json({ message: "Password has been reset successfully." });
 });
 
-
 app.get("/test", (req, res) => {
-res.json("test ok");
+    res.json("test ok");
 });
 
 app.post("/register", async (req, res) => {
-const{name,email,password,role} = req.body;
-try {
-    const userDoc = await User.create({
-        name,
-        email,
-        password:bcrypt.hashSync(password,bcryptSalt),
-        role, // Save role
-    });
-    res.json({userDoc});
-} catch (e) {
-    res.status(422).json(e);
-}
-
-
+    const { name, email, password, role } = req.body;
+    try {
+        const userDoc = await User.create({
+            name,
+            email,
+            password: bcrypt.hashSync(password, bcryptSalt),
+            role, // Save role
+        });
+        res.json({ userDoc });
+    } catch (e) {
+        res.status(422).json(e);
+    }
 });
 
 app.post("/login", async (req, res) => {
@@ -144,17 +140,16 @@ app.post("/login", async (req, res) => {
     }
 });
 
-
-app.get("/profile", (req,res) => {
-    const {token} = req.cookies;
+app.get("/profile", (req, res) => {
+    const { token } = req.cookies;
     if (token) {
-jwt.verify(token, jwtSecret, {}, async (err, userData) => {
-if (err) throw err;
-const {name,email,_id} = await User.findById(userData.id);
-res.json({name,email,_id});
-});
+        jwt.verify(token, jwtSecret, {}, async (err, userData) => {
+            if (err) throw err;
+            const { name, email, _id } = await User.findById(userData.id);
+            res.json({ name, email, _id });
+        });
     } else {
-res.json(null);
+        res.json(null);
     }
 });
 
@@ -166,22 +161,21 @@ app.post("/logout", (req, res) => {
     }).json(true);
 });
 
-
 app.post("/courses", (req, res) => {
     const { token } = req.cookies;
     const {
-        name,courseName, department,
+        name, courseName, department,
         year, units, phone, admission,
         unitsEnrolled, gender
     } = req.body;
 
     jwt.verify(token, jwtSecret, {}, async (err, userData) => {
-         if (err) {
-        return res.status(401).json({ error: 'Invalid token' });
-    }
+        if (err) {
+            return res.status(401).json({ error: 'Invalid token' });
+        }
         const courseDoc = await Course.create({
             owner: userData.id,
-            name,courseName, department,
+            name, courseName, department,
             year, units, phone, admission,
             unitsEnrolled, gender
         });
@@ -189,54 +183,45 @@ app.post("/courses", (req, res) => {
     });
 });
 
-
-
-app.get("/user-courses", (req,res) => {
-    const {token} = req.cookies;
+app.get("/user-courses", (req, res) => {
+    const { token } = req.cookies;
     jwt.verify(token, jwtSecret, {}, async (err, userData) => {
-        const {id} = userData;
-        res.json( await Course.find({owner:id}) );
+        if (err) return res.status(401).json({ error: 'Invalid token' });
+        const { id } = userData;
+        res.json(await Course.find({ owner: id }));
     });
-   
 });
 
-
-
-app.get("/courses/:id", async (req,res) => {
-const {id} = req.params;
-res.json(await Course.findById(id));
-
+app.get("/courses/:id", async (req, res) => {
+    const { id } = req.params;
+    res.json(await Course.findById(id));
 });
 
-app.put("/courses", async (req,res) => {
-    const {token} = req.cookies;
+app.put("/courses", async (req, res) => {
+    const { token } = req.cookies;
     const {
-        id, name,courseName,department,
-        year,units,phone,admission,
-        unitsEnrolled,gender
+        id, name, courseName, department,
+        year, units, phone, admission,
+        unitsEnrolled, gender
     } = req.body;
     jwt.verify(token, jwtSecret, {}, async (err, userData) => {
         if (err) throw err;
         const courseDoc = await Course.findById(id);
-if (userData.id === courseDoc.owner.toString()) {
-    courseDoc.set({
-        name,courseName,department,
-       year,units,phone,admission,
-        unitsEnrolled,gender
-
+        if (userData.id === courseDoc.owner.toString()) {
+            courseDoc.set({
+                name, courseName, department,
+                year, units, phone, admission,
+                unitsEnrolled, gender
+            });
+            await courseDoc.save();
+            res.json("ok");
+        }
     });
-   await courseDoc.save();
-    res.json("ok");
-}
-    });
-
 });
 
-app.get("/courses", async (req,res) => {
-    res.json( await Course.find() );
-
-})
-
+app.get("/courses", async (req, res) => {
+    res.json(await Course.find());
+});
 
 app.get("/result", async (req, res) => {
     try {
@@ -247,27 +232,54 @@ app.get("/result", async (req, res) => {
     }
 });
 
-
-const isAdmin = (req, res, next) => {
-    const { token } = req.cookies;
-    if (token) {
-        jwt.verify(token, jwtSecret, (err, userData) => {
-            if (err) {
-                return res.status(401).json({ error: 'Invalid token' });
-            }
-            if (userData.role !== 'admin') {
-                return res.status(403).json({ error: 'Access denied' });
-            }
-            req.userData = userData;
-            next();
-        });
-    } else {
-        res.status(401).json({ error: 'No token provided' });
-    }
-};
-
-
 const upload = multer({ dest: 'uploads/' }); // Adjust the destination as needed
+
+// Add this middleware to your route
+app.post("/upload-results", upload.single('pdfFile'), async (req, res) => {
+    const { studentName, registrationNumber, course, units, marks } = req.body;
+    const pdfFile = req.file;
+
+    if (!pdfFile) {
+        return res.status(400).json({ error: "PDF file is required" });
+    }
+
+    try {
+        // Save the result and the file information to the Results collection
+        const result = await Results.create({
+            studentName,
+            registrationNumber,
+            course,
+            units,
+            marks,
+            pdf: pdfFile.path,
+        });
+
+        res.json({ success: true, result });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Failed to upload results" });
+    }
+});
+
+function isAdmin(req, res, next) {
+    const { token } = req.cookies;
+
+    if (!token) {
+        return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    jwt.verify(token, jwtSecret, {}, async (err, userData) => {
+        if (err) {
+            return res.status(401).json({ error: "Invalid token" });
+        }
+
+        const user = await User.findById(userData.id);
+        if (user && user.role === 'admin') {
+            req.user = user; // Attach the user to the request
+            next(); // Proceed to the next middleware or route handler
+        } 
+    });
+}
 
 app.post("/upload-results", isAdmin, upload.single('pdfFile'), async (req, res) => {
     const { studentName, registrationNumber, course, units, marks } = req.body;
@@ -295,94 +307,38 @@ app.post("/upload-results", isAdmin, upload.single('pdfFile'), async (req, res) 
     }
 });
 
-
-// News Routes
-
-app.post("/news", isAdmin, async (req, res) => {
-    const { title, description, date, createdBy, category } = req.body;
+// Post news to the database (Admin only)
+app.post('/news', isAdmin, async (req, res) => {
+    console.log('Received request to post news:', req.body); // Log the incoming request body
+    const { title, description, date, createdBy, category } = req.body; // Match the fields
 
     try {
-        const newsDoc = await NewsModel.create({
-            title,
-            description,
-            date,
-            createdBy,
-            category,
-            createdAt: new Date(),
-            updatedAt: new Date(),
-        });
+        const newsDoc = await News.create({ 
+            title, 
+            description, 
+            date, 
+            createdBy, 
+            updatedAt: new Date() 
+        }); // Add updatedAt or any other fields if necessary
 
+        console.log('News created successfully:', newsDoc); // Log the created news document
         res.json(newsDoc);
     } catch (err) {
-        res.status(500).json({ error: "Failed to create news" });
+        console.error('Failed to post news:', err); // Log the error details
+        res.status(500).json({ error: "Failed to post news" });
     }
 });
 
-app.get("/news", async (req, res) => {
+
+app.get('/news', async (req, res) => {
     try {
-        const news = await NewsModel.find().sort({ date: -1 }); // Sort by date, newest first
+        const news = await News.find();
         res.json(news);
     } catch (err) {
         res.status(500).json({ error: "Failed to fetch news" });
     }
 });
 
-app.get("/news/:id", async (req, res) => {
-    const { id } = req.params;
-
-    try {
-        const newsDoc = await NewsModel.findById(id);
-        if (!newsDoc) {
-            return res.status(404).json({ error: "News not found" });
-        }
-        res.json(newsDoc);
-    } catch (err) {
-        res.status(500).json({ error: "Failed to fetch news" });
-    }
+app.listen(4000, () => {
+    console.log('Server is running on port 4000');
 });
-
-app.put("/news/:id", isAdmin, async (req, res) => {
-    const { id } = req.params;
-    const { title, description, date, createdBy, category } = req.body;
-
-    try {
-        const newsDoc = await NewsModel.findById(id);
-        if (!newsDoc) {
-            return res.status(404).json({ error: "News not found" });
-        }
-
-        newsDoc.set({
-            title,
-            description,
-            date,
-            createdBy,
-            category,
-            updatedAt: new Date(),
-        });
-
-        await newsDoc.save();
-        res.json(newsDoc);
-    } catch (err) {
-        res.status(500).json({ error: "Failed to update news" });
-    }
-});
-
-app.delete("/news/:id", isAdmin, async (req, res) => {
-    const { id } = req.params;
-
-    try {
-        const newsDoc = await NewsModel.findById(id);
-        if (!newsDoc) {
-            return res.status(404).json({ error: "News not found" });
-        }
-
-        await newsDoc.remove();
-        res.json({ message: "News deleted successfully" });
-    } catch (err) {
-        res.status(500).json({ error: "Failed to delete news" });
-    }
-});
-
-
-
-app.listen(4000);

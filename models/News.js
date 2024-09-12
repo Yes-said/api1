@@ -3,11 +3,9 @@ const mongoose = require("mongoose");
 const NewsSchema = new mongoose.Schema({
     title: String,
     description: String,
-    date: Date,
+    date: { type: Date, default: Date.now },
     createdBy: String,
-    category: String,
-    createdAt: Date,
-    updatedAt: Date,
+    updatedAt: Date, // This will be updated each time news is modified
 });
 
 const NewsModel = mongoose.model("News", NewsSchema);
