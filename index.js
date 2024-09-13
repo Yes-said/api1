@@ -12,6 +12,7 @@ const News = require('./models/News'); // Adjust the path as necessary
 const Results = require('./models/Results'); // Import Results model
 const cookieParser = require("cookie-parser");
 const multer = require('multer');
+const path = require('path');
 const app = express();
 const bcryptSalt = bcrypt.genSaltSync(10);
 const jwtSecret = "yujlkjhfgdsrzxdtcfwgihopjmjjjnibuvyxrsc";
@@ -30,6 +31,10 @@ app.use(cors({
     },
     allowedHeaders: ['Content-Type', 'Authorization'],
 }));
+
+// Serve static files
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
 
 mongoose.connect(process.env.MONGO_URL);
 
