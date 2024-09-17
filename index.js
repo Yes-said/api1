@@ -16,7 +16,7 @@ const path = require('path');
 const app = express();
 const bcryptSalt = bcrypt.genSaltSync(10);
 const jwtSecret = "yujlkjhfgdsrzxdtcfwgihopjmjjjnibuvyxrsc";
-const resetTokenSecret = "resetTokenSecret"; // Separate secret for reset tokens
+//const resetTokenSecret = "resetTokenSecret"; // Separate secret for reset tokens
 
 app.use(express.json());
 app.use(cookieParser());
@@ -158,6 +158,69 @@ app.get("/profile", (req, res) => {
     }
 });
 
+app.put("/update-profile", async (req, res) => {
+    const { token } = req.cookies;
+    const { name, email, password } = req.body;
+
+    if (!token) {
+        return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    jwt.verify(token, jwtSecret, {}, async (err, userData) => {
+        if (err) {
+            return res.status(401).json({ error: "Invalid token" });
+        }
+
+        try {
+            const user = await User.findById(userData.id);
+
+            if (name) user.name = name;
+            if (email) user.email = email;
+            if (password) {
+                user.password = bcrypt.hashSync(password, bcryptSalt);
+            }
+
+            await user.save();
+            res.json(user);
+        } catch (err) {
+            console.error(err);
+            res.status(500).json({ error: "Failed to update profile" });
+        }
+    });
+});
+
+// DELETE route to delete the user's profile
+app.delete("/delete-profile", async (req, res) => {
+    const { token } = req.cookies;
+    if (!token) {
+        return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    jwt.verify(token, jwtSecret, {}, async (err, userData) => {
+        if (err) {
+            return res.status(401).json({ error: "Invalid token" });
+        }
+
+        try {
+            const user = await User.findByIdAndDelete(userData.id);
+            if (!user) {
+                return res.status(404).json({ error: "User not found" });
+            }
+
+            // Invalidate the token
+            res.cookie("token", "", {
+                httpOnly: true,
+                secure: true, // Set to true if your environment is HTTPS
+                sameSite: 'None', // Required for cross-site requests
+            }).json({ success: true, message: "Profile deleted successfully" });
+        } catch (err) {
+            console.error(err);
+            res.status(500).json({ error: "Failed to delete profile" });
+        }
+    });
+});
+
+
 app.post("/logout", (req, res) => {
     res.cookie("token", "", {
         httpOnly: true,
@@ -287,7 +350,11 @@ function isAdmin(req, res, next) {
 }
 
 app.post("/upload-results", isAdmin, upload.single('pdfFile'), async (req, res) => {
-    const { studentName, registrationNumber, course, units, marks } = req.body;
+    const { studentName, registrationNumber, course } = req.body;
+    const units = req.body.units.map((unit, index) => ({
+        unit: req.body[`units[${index}][unit]`],
+        marks: req.body[`units[${index}][marks]`],
+    }));
     const pdfFile = req.file;
 
     if (!pdfFile) {
@@ -295,20 +362,66 @@ app.post("/upload-results", isAdmin, upload.single('pdfFile'), async (req, res) 
     }
 
     try {
-        // Save the result and the file information to the Results collection
         const result = await Results.create({
             studentName,
             registrationNumber,
             course,
             units,
-            marks,
             pdf: pdfFile.path,
         });
 
         res.json({ success: true, result });
     } catch (err) {
-        console.error(err);
+        console.error("Failed to upload results:", err);
         res.status(500).json({ error: "Failed to upload results" });
+    }
+});
+
+// PUT route to update a result by ID (Admin only)
+app.put("/update-result/:id", isAdmin, upload.single('pdfFile'), async (req, res) => {
+    const { id } = req.params;
+    const { studentName, registrationNumber, course } = req.body;
+    const units = req.body.units.map((unit, index) => ({
+        unit: req.body[`units[${index}][unit]`],
+        marks: req.body[`units[${index}][marks]`],
+    }));
+    const pdfFile = req.file;
+
+    try {
+        const result = await Results.findById(id);
+        if (!result) {
+            return res.status(404).json({ error: "Result not found" });
+        }
+ 
+         // Update fields
+        result.studentName = studentName || result.studentName;
+        result.registrationNumber = registrationNumber || result.registrationNumber;
+        result.course = course || result.course;
+        result.units = units || result.units;
+
+        if (pdfFile) {
+            result.pdf = pdfFile.path; // Update PDF path if a new file is uploaded
+        }
+
+        await result.save();
+        res.json({ success: true, result });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Failed to update result" });
+    }
+});
+
+ // DELETE route to delete a result by ID (Admin only)
+app.delete("/delete-result/:id", isAdmin, async (req, res) => {
+    const { id } = req.params;
+    try {
+        const result = await Results.findByIdAndDelete(id);
+        if (!result) {
+            return res.status(404).json({ error: "Result not found" });
+        }
+        res.json({ success: true, message: "Result deleted successfully" });
+    } catch (err) {
+        res.status(500).json({ error: "Failed to delete result" });
     }
 });
 
