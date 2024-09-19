@@ -18,20 +18,10 @@ const bcryptSalt = bcrypt.genSaltSync(10);
 const jwtSecret = "yujlkjhfgdsrzxdtcfwgihopjmjjjnibuvyxrsc";
 //const resetTokenSecret = "resetTokenSecret"; // Separate secret for reset tokens
 
-app.use(express.json());
-app.use(cookieParser());
 app.use(cors({
     credentials: true,
-    origin: (origin, callback) => {
-        if (!origin || ['http://localhost:5173', 'https://kimcresults-ac-ke.vercel.app'].includes(origin)) {
-            callback(null, true);
-        } else {
-            callback(new Error('Not allowed by CORS'));
-        }
-    },
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    origin: '*', // This will allow all origins
 }));
-
 // Serve static files
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
