@@ -68,10 +68,11 @@ app.get("/test", (req, res) => {
 });
 
 app.post("/register", async (req, res) => {
-    const { name, email, password, role } = req.body;
+    const { name, admission, email, password, role } = req.body;
     try {
         const userDoc = await User.create({
             name,
+            admission,
             email,
             password: bcrypt.hashSync(password, bcryptSalt),
             role, // Save role
@@ -273,17 +274,32 @@ const upload = multer({ dest: 'uploads/' }); // Adjust the destination as needed
 // Add this middleware to your route
 app.post("/upload-results", isAdmin, upload.single('pdfFile'), async (req, res) => {
     const { studentName, registrationNumber, course } = req.body;
-    const units = req.body.units.map((_, index) => ({
-        unit: req.body[`units[${index}][unit]`],
-        marks: req.body[`units[${index}][marks]`],
-    }));
-    const pdfFile = req.file;
-
-    if (!pdfFile) {
-        return res.status(400).json({ error: "PDF file is required" });
-    }
 
     try {
+        // Validate if the student exists in the User collection
+        const student = await User.findOne({ name: studentName, registrationNumber: registrationNumber });
+        if (!student) {
+            return res.status(404).json({ error: "Student not found. Ensure the student is registered before adding results." });
+        }
+
+        // Validate if the course exists in the Course collection
+        const courseExists = await Course.findOne({ courseName: course });
+        if (!courseExists) {
+            return res.status(404).json({ error: "Course not found. Ensure the course is registered before adding results." });
+        }
+
+        // Validate units structure
+        const units = req.body.units.map((unit, index) => ({
+            unit: req.body[`units[${index}][unit]`],
+            marks: req.body[`units[${index}][marks]`],
+        }));
+
+        const pdfFile = req.file;
+        if (!pdfFile) {
+            return res.status(400).json({ error: "PDF file is required" });
+        }
+
+        // Create a new result entry
         const result = await Results.create({
             studentName,
             registrationNumber,
@@ -298,7 +314,6 @@ app.post("/upload-results", isAdmin, upload.single('pdfFile'), async (req, res) 
         res.status(500).json({ error: "Failed to upload results" });
     }
 });
-
 
 function isAdmin(req, res, next) {
     const { token } = req.cookies;
@@ -325,7 +340,7 @@ function isAdmin(req, res, next) {
 
 app.post("/upload-results", isAdmin, upload.single('pdfFile'), async (req, res) => {
     const { studentName, registrationNumber, course } = req.body;
-    const units = req.body.units.map((unit, index) => ({
+    const units = req.body.units.map((units, index) => ({
         unit: req.body[`units[${index}][unit]`],
         marks: req.body[`units[${index}][marks]`],
     }));

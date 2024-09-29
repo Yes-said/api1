@@ -1,7 +1,7 @@
 const mongoose  = require("mongoose");
 
 const courseSchema = new mongoose.Schema({
-owner: {type:mongoose.Schema.Types.ObjectId, ref: "User"},
+owner: {type:mongoose.Schema.Types.ObjectId, ref: "User", required: true},
 name: String,
 courseName: String,
 department: String,
