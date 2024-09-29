@@ -3,9 +3,7 @@ const cors = require('cors');
 const mongoose = require('mongoose');
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
-const crypto = require("crypto"); // For generating reset tokens
 require("dotenv").config();
-const nodemailer = require('nodemailer'); // For sending emails
 const User = require("./models/User.js");
 const Course = require("./models/Course.js");
 const News = require('./models/News'); // Adjust the path as necessary
@@ -38,62 +36,32 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 mongoose.connect(process.env.MONGO_URL);
 
-// Nodemailer transporter setup
-const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: {
-        user: process.env.EMAIL,
-        pass: process.env.EMAIL_PASSWORD,
-    },
-});
+//search
+async function searchDatabase(query) {
+    try {
+        // Assuming you want to search in the User and Course collections
+        const userResults = await User.find({ name: new RegExp(query, 'i') }); // Case-insensitive search by name
+        const courseResults = await Course.find({ courseName: new RegExp(query, 'i') }); // Case-insensitive search by course name
 
-app.post("/forgot-password", async (req, res) => {
-    const { email } = req.body;
-    const user = await User.findOne({ email });
-    
-    if (!user) {
-        return res.status(404).json({ error: "User not found." });
+        return { users: userResults, courses: courseResults };
+    } catch (error) {
+        console.error("Error during search:", error);
+        throw error; // Rethrow the error for handling in the route
     }
-    
-    const resetToken = crypto.randomBytes(32).toString("hex");
-    const hashedResetToken = bcrypt.hashSync(resetToken, bcryptSalt);
+}
 
-    user.resetToken = hashedResetToken;
-    user.resetTokenExpiry = Date.now() + 3600000; // Token expires in 1 hour
-    await user.save();
-
-    const resetLink = `http://localhost:5173/reset-password/${resetToken}`;
-
-    transporter.sendMail({
-        from: process.env.EMAIL,
-        to: user.email,
-        subject: "Password Reset",
-        text: `You requested a password reset. Click the link to reset your password: ${resetLink}`,
-    });
-
-    res.json({ message: "Password reset link sent to your email." });
-});
-
-app.post("/reset-password/:token", async (req, res) => {
-    const { token } = req.params;
-    const { password } = req.body;
-
-    const user = await User.findOne({
-        resetToken: token,
-        resetTokenExpiry: { $gt: Date.now() },
-    });
-
-    if (!user) {
-        return res.status(400).json({ error: "Invalid or expired token." });
+// Use the function in your search route
+app.get("/search", async (req, res) => {
+    const { query } = req.query;
+    try {
+        const results = await searchDatabase(query);
+        res.json(results);
+    } catch (error) {
+        res.status(500).json({ error: "Failed to search the database." });
     }
-
-    user.password = bcrypt.hashSync(password, bcryptSalt);
-    user.resetToken = undefined;
-    user.resetTokenExpiry = undefined;
-    await user.save();
-
-    res.json({ message: "Password has been reset successfully." });
 });
+
+  
 
 app.get("/test", (req, res) => {
     res.json("test ok");
@@ -303,8 +271,12 @@ app.get("/result", async (req, res) => {
 const upload = multer({ dest: 'uploads/' }); // Adjust the destination as needed
 
 // Add this middleware to your route
-app.post("/upload-results", upload.single('pdfFile'), async (req, res) => {
-    const { studentName, registrationNumber, course, units, marks } = req.body;
+app.post("/upload-results", isAdmin, upload.single('pdfFile'), async (req, res) => {
+    const { studentName, registrationNumber, course } = req.body;
+    const units = req.body.units.map((_, index) => ({
+        unit: req.body[`units[${index}][unit]`],
+        marks: req.body[`units[${index}][marks]`],
+    }));
     const pdfFile = req.file;
 
     if (!pdfFile) {
@@ -312,22 +284,21 @@ app.post("/upload-results", upload.single('pdfFile'), async (req, res) => {
     }
 
     try {
-        // Save the result and the file information to the Results collection
         const result = await Results.create({
             studentName,
             registrationNumber,
             course,
             units,
-            marks,
             pdf: pdfFile.path,
         });
 
         res.json({ success: true, result });
     } catch (err) {
-        console.error(err);
+        console.error("Failed to upload results:", err);
         res.status(500).json({ error: "Failed to upload results" });
     }
 });
+
 
 function isAdmin(req, res, next) {
     const { token } = req.cookies;
@@ -343,9 +314,12 @@ function isAdmin(req, res, next) {
 
         const user = await User.findById(userData.id);
         if (user && user.role === 'admin') {
-            req.user = user; // Attach the user to the request
-            next(); // Proceed to the next middleware or route handler
-        } 
+            req.user = user; 
+            next(); 
+        } else {
+            return res.status(403).json({ error: "Forbidden: You do not have admin access" });
+        }
+        
     });
 }
 
