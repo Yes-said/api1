@@ -6,15 +6,14 @@ const bcrypt = require("bcryptjs");
 require("dotenv").config();
 const User = require("./models/User.js");
 const Course = require("./models/Course.js");
-const News = require('./models/News'); // Adjust the path as necessary
-const Results = require('./models/Results'); // Import Results model
+const News = require('./models/News');
+const Results = require('./models/Results');
 const cookieParser = require("cookie-parser");
 const multer = require('multer');
 const path = require('path');
 const app = express();
 const bcryptSalt = bcrypt.genSaltSync(10);
 const jwtSecret = "yujlkjhfgdsrzxdtcfwgihopjmjjjnibuvyxrsc";
-//const resetTokenSecret = "resetTokenSecret"; // Separate secret for reset tokens
 
 app.use(express.json());
 app.use(cookieParser());
@@ -33,24 +32,20 @@ app.use(cors({
 // Serve static files
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-
 mongoose.connect(process.env.MONGO_URL);
 
-//search
+// Search functionality
 async function searchDatabase(query) {
     try {
-        // Assuming you want to search in the User and Course collections
-        const userResults = await User.find({ name: new RegExp(query, 'i') }); // Case-insensitive search by name
-        const courseResults = await Course.find({ courseName: new RegExp(query, 'i') }); // Case-insensitive search by course name
-
+        const userResults = await User.find({ name: new RegExp(query, 'i') });
+        const courseResults = await Course.find({ courseName: new RegExp(query, 'i') });
         return { users: userResults, courses: courseResults };
     } catch (error) {
         console.error("Error during search:", error);
-        throw error; // Rethrow the error for handling in the route
+        throw error;
     }
 }
 
-// Use the function in your search route
 app.get("/search", async (req, res) => {
     const { query } = req.query;
     try {
@@ -61,49 +56,50 @@ app.get("/search", async (req, res) => {
     }
 });
 
-  
-
 app.get("/test", (req, res) => {
     res.json("test ok");
 });
 
 app.post("/register", async (req, res) => {
-    const { name, admission, email, password, role } = req.body;
+    const { name, identity, password, role } = req.body;
+
+    if (!['student', 'admin'].includes(role)) {
+        return res.status(400).json({ error: "Invalid role" });
+    }
+
     try {
-        const userDoc = await User.create({
-            name,
-            admission,
-            email,
-            password: bcrypt.hashSync(password, bcryptSalt),
-            role, // Save role
-        });
-        res.json({ userDoc });
+        const userDoc = new User({ name, identity, password, role });
+        const newUser = await userDoc.save();
+        res.json({ success: true, user: newUser });
     } catch (e) {
-        res.status(422).json(e);
+        console.error("Registration error:", e);
+        if (e.name === 'ValidationError') {
+            return res.status(400).json({ error: e.message });
+        }
+        res.status(422).json({ error: "Registration failed" });
     }
 });
 
 app.post("/login", async (req, res) => {
-    const { email, password, role } = req.body; // Include role in the request body
-    const userDoc = await User.findOne({ email });
+    const { identity, password, role } = req.body;
+    const userDoc = await User.findOne({ identity });
     if (userDoc) {
         const passOK = bcrypt.compareSync(password, userDoc.password);
         if (passOK) {
-            // Check if the provided role matches the registered role
             if (userDoc.role !== role) {
                 return res.status(403).json("Permission denied. Please login with the correct role.");
             }
 
             jwt.sign({
-                email: userDoc.email,
+                identity: userDoc.identity,
                 id: userDoc._id,
-                role: userDoc.role, // Include role in the token
+                role: userDoc.role,
             }, jwtSecret, {}, (err, token) => {
                 if (err) throw err;
                 res.cookie("token", token, {
                     httpOnly: true,
-                    secure: true, // Set to true if your environment is HTTPS
-                    sameSite: 'None', // Required for cross-site requests
+                    secure: true,
+                    sameSite: 'None',
                 }).json(userDoc);
             });
         } else {
@@ -119,8 +115,8 @@ app.get("/profile", (req, res) => {
     if (token) {
         jwt.verify(token, jwtSecret, {}, async (err, userData) => {
             if (err) throw err;
-            const { name, email, _id } = await User.findById(userData.id);
-            res.json({ name, email, _id });
+            const { name, identity, _id } = await User.findById(userData.id);
+            res.json({ name, identity, _id });
         });
     } else {
         res.json(null);
@@ -129,7 +125,7 @@ app.get("/profile", (req, res) => {
 
 app.put("/update-profile", async (req, res) => {
     const { token } = req.cookies;
-    const { name, email, password } = req.body;
+    const { name, identity, password } = req.body;
 
     if (!token) {
         return res.status(401).json({ error: "Unauthorized" });
@@ -144,7 +140,7 @@ app.put("/update-profile", async (req, res) => {
             const user = await User.findById(userData.id);
 
             if (name) user.name = name;
-            if (email) user.email = email;
+            if (identity) user.identity = identity;
             if (password) {
                 user.password = bcrypt.hashSync(password, bcryptSalt);
             }
@@ -158,7 +154,6 @@ app.put("/update-profile", async (req, res) => {
     });
 });
 
-// DELETE route to delete the user's profile
 app.delete("/delete-profile", async (req, res) => {
     const { token } = req.cookies;
     if (!token) {
@@ -176,11 +171,10 @@ app.delete("/delete-profile", async (req, res) => {
                 return res.status(404).json({ error: "User not found" });
             }
 
-            // Invalidate the token
             res.cookie("token", "", {
                 httpOnly: true,
-                secure: true, // Set to true if your environment is HTTPS
-                sameSite: 'None', // Required for cross-site requests
+                secure: true,
+                sameSite: 'None',
             }).json({ success: true, message: "Profile deleted successfully" });
         } catch (err) {
             console.error(err);
@@ -189,21 +183,18 @@ app.delete("/delete-profile", async (req, res) => {
     });
 });
 
-
 app.post("/logout", (req, res) => {
     res.cookie("token", "", {
         httpOnly: true,
-        secure: true, // Set to true if your environment is HTTPS
-        sameSite: 'None', // Required for cross-site requests
+        secure: true,
+        sameSite: 'None',
     }).json(true);
 });
 
 app.post("/courses", (req, res) => {
     const { token } = req.cookies;
     const {
-        name, courseName, department,
-        year, units, phone, admission,
-        unitsEnrolled, gender
+        name, courseName, department, year, units, phone, gender
     } = req.body;
 
     jwt.verify(token, jwtSecret, {}, async (err, userData) => {
@@ -212,9 +203,7 @@ app.post("/courses", (req, res) => {
         }
         const courseDoc = await Course.create({
             owner: userData.id,
-            name, courseName, department,
-            year, units, phone, admission,
-            unitsEnrolled, gender
+            name, courseName, department, year, units, phone, gender
         });
         res.json(courseDoc);
     });
@@ -237,18 +226,14 @@ app.get("/courses/:id", async (req, res) => {
 app.put("/courses", async (req, res) => {
     const { token } = req.cookies;
     const {
-        id, name, courseName, department,
-        year, units, phone, admission,
-        unitsEnrolled, gender
+        id, name, courseName, department, year, units, phone, gender
     } = req.body;
     jwt.verify(token, jwtSecret, {}, async (err, userData) => {
         if (err) throw err;
         const courseDoc = await Course.findById(id);
         if (userData.id === courseDoc.owner.toString()) {
             courseDoc.set({
-                name, courseName, department,
-                year, units, phone, admission,
-                unitsEnrolled, gender
+                name, courseName, department, year, units, phone, gender
             });
             await courseDoc.save();
             res.json("ok");
@@ -262,58 +247,103 @@ app.get("/courses", async (req, res) => {
 
 app.get("/result", async (req, res) => {
     try {
-        const results = await Results.find(); // Fetch results from Results collection
+        const results = await Results.find()
+            .populate('student', 'name')
+            .populate('course', 'courseName department year');
         res.json(results);
     } catch (err) {
         res.status(500).json({ error: "Failed to fetch results" });
     }
 });
 
-const upload = multer({ dest: 'uploads/' }); // Adjust the destination as needed
 
-// Add this middleware to your route
-app.post("/upload-results", isAdmin, upload.single('pdfFile'), async (req, res) => {
-    const { studentName, registrationNumber, course } = req.body;
-
+app.post('/news', async (req, res) => {
     try {
-        // Validate if the student exists in the User collection
-        const student = await User.findOne({ name: studentName, registrationNumber: registrationNumber });
-        if (!student) {
-            return res.status(404).json({ error: "Student not found. Ensure the student is registered before adding results." });
-        }
+      const { title, description, date, createdBy } = req.body;
+      const newNews = new News({
+        title,
+        description,
+        date,
+        createdBy
+      });
+      const savedNews = await newNews.save();
+      res.status(201).json(savedNews);
+    } catch (error) {
+      console.error('Error creating news:', error);
+      res.status(500).json({ error: 'Failed to create news' });
+    }
+  });
 
-        // Validate if the course exists in the Course collection
-        const courseExists = await Course.findOne({ courseName: course });
-        if (!courseExists) {
-            return res.status(404).json({ error: "Course not found. Ensure the course is registered before adding results." });
-        }
-
-        // Validate units structure
-        const units = req.body.units.map((unit, index) => ({
-            unit: req.body[`units[${index}][unit]`],
-            marks: req.body[`units[${index}][marks]`],
-        }));
-
-        const pdfFile = req.file;
-        if (!pdfFile) {
-            return res.status(400).json({ error: "PDF file is required" });
-        }
-
-        // Create a new result entry
-        const result = await Results.create({
-            studentName,
-            registrationNumber,
-            course,
-            units,
-            pdf: pdfFile.path,
-        });
-
-        res.json({ success: true, result });
-    } catch (err) {
-        console.error("Failed to upload results:", err);
-        res.status(500).json({ error: "Failed to upload results" });
+// News Routes
+// Get all news
+app.get('/news', async (req, res) => {
+    try {
+        const news = await News.find();
+        res.json(news);
+    } catch (error) {
+        console.error('Error fetching news:', error);
+        res.status(500).json({ error: 'Failed to fetch news' });
     }
 });
+
+// Get news by ID
+app.get('/news/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const newsItem = await News.findById(id);
+        if (!newsItem) {
+            return res.status(404).json({ error: 'News not found' });
+        }
+        res.json(newsItem);
+    } catch (error) {
+        console.error('Error fetching news:', error);
+        res.status(500).json({ error: 'Failed to fetch news' });
+    }
+});
+
+// Update news
+app.put('/news/:id', async (req, res) => {
+    const { id } = req.params;
+    const { title, description, date, createdBy } = req.body;
+
+    try {
+        const updatedNews = await News.findByIdAndUpdate(id, {
+            title,
+            description,
+            date,
+            createdBy
+        }, { new: true, runValidators: true });
+
+        if (!updatedNews) {
+            return res.status(404).json({ error: 'News not found' });
+        }
+
+        res.json(updatedNews);
+    } catch (error) {
+        console.error('Error updating news:', error);
+        res.status(500).json({ error: 'Failed to update news' });
+    }
+});
+
+// Delete news
+app.delete('/news/:id', async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        const deletedNews = await News.findByIdAndDelete(id);
+        if (!deletedNews) {
+            return res.status(404).json({ error: 'News not found' });
+        }
+
+        res.json({ success: true, message: 'News deleted successfully' });
+    } catch (error) {
+        console.error('Error deleting news:', error);
+        res.status(500).json({ error: 'Failed to delete news' });
+    }
+});
+
+
+const upload = multer({ dest: 'uploads/' });
 
 function isAdmin(req, res, next) {
     const { token } = req.cookies;
@@ -328,121 +358,54 @@ function isAdmin(req, res, next) {
         }
 
         const user = await User.findById(userData.id);
-        if (user && user.role === 'admin') {
-            req.user = user; 
-            next(); 
-        } else {
-            return res.status(403).json({ error: "Forbidden: You do not have admin access" });
+        if (user.role !== 'admin') {
+            return res.status(403).json({ error: "Permission denied" });
         }
-        
+
+        next();
     });
 }
 
-app.post("/upload-results", isAdmin, upload.single('pdfFile'), async (req, res) => {
-    const { studentName, registrationNumber, course } = req.body;
-    const units = req.body.units.map((units, index) => ({
-        unit: req.body[`units[${index}][unit]`],
-        marks: req.body[`units[${index}][marks]`],
-    }));
-    const pdfFile = req.file;
+const Contact = require('./models/Contact'); // Import the Contact model
 
-    if (!pdfFile) {
-        return res.status(400).json({ error: "PDF file is required" });
+// Contact form submission
+app.post('/contact', async (req, res) => {
+    const { name, email, message } = req.body;
+
+    try {
+        const newContact = new Contact({
+            name,
+            email,
+            message,
+        });
+        await newContact.save();
+        res.status(201).json({ success: true, message: 'Message sent successfully' });
+    } catch (error) {
+        console.error('Error saving contact message:', error);
+        res.status(500).json({ error: 'Failed to send message' });
+    }
+});
+
+
+app.post('/upload-results', isAdmin, upload.single('file'), async (req, res) => {
+    const { student, course, marks } = req.body;
+
+    if (!req.file) {
+        return res.status(400).json({ error: 'Please upload a file' });
     }
 
     try {
-        const result = await Results.create({
-            studentName,
-            registrationNumber,
+        const result = new Results({
+            student,
             course,
-            units,
-            pdf: pdfFile.path,
+            marks,
+            pdf: req.file.path
         });
 
-        res.json({ success: true, result });
-    } catch (err) {
-        console.error("Failed to upload results:", err);
-        res.status(500).json({ error: "Failed to upload results" });
-    }
-});
-
-// PUT route to update a result by ID (Admin only)
-app.put("/update-result/:id", isAdmin, upload.single('pdfFile'), async (req, res) => {
-    const { id } = req.params;
-    const { studentName, registrationNumber, course } = req.body;
-    const units = req.body.units.map((unit, index) => ({
-        unit: req.body[`units[${index}][unit]`],
-        marks: req.body[`units[${index}][marks]`],
-    }));
-    const pdfFile = req.file;
-
-    try {
-        const result = await Results.findById(id);
-        if (!result) {
-            return res.status(404).json({ error: "Result not found" });
-        }
- 
-         // Update fields
-        result.studentName = studentName || result.studentName;
-        result.registrationNumber = registrationNumber || result.registrationNumber;
-        result.course = course || result.course;
-        result.units = units || result.units;
-
-        if (pdfFile) {
-            result.pdf = pdfFile.path; // Update PDF path if a new file is uploaded
-        }
-
         await result.save();
-        res.json({ success: true, result });
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: "Failed to update result" });
-    }
-});
-
- // DELETE route to delete a result by ID (Admin only)
-app.delete("/delete-result/:id", isAdmin, async (req, res) => {
-    const { id } = req.params;
-    try {
-        const result = await Results.findByIdAndDelete(id);
-        if (!result) {
-            return res.status(404).json({ error: "Result not found" });
-        }
-        res.json({ success: true, message: "Result deleted successfully" });
-    } catch (err) {
-        res.status(500).json({ error: "Failed to delete result" });
-    }
-});
-
-// Post news to the database (Admin only)
-app.post('/news', isAdmin, async (req, res) => {
-    console.log('Received request to post news:', req.body); // Log the incoming request body
-    const { title, description, date, createdBy, category } = req.body; // Match the fields
-
-    try {
-        const newsDoc = await News.create({ 
-            title, 
-            description, 
-            date, 
-            createdBy, 
-            updatedAt: new Date() 
-        }); // Add updatedAt or any other fields if necessary
-
-        console.log('News created successfully:', newsDoc); // Log the created news document
-        res.json(newsDoc);
-    } catch (err) {
-        console.error('Failed to post news:', err); // Log the error details
-        res.status(500).json({ error: "Failed to post news" });
-    }
-});
-
-
-app.get('/news', async (req, res) => {
-    try {
-        const news = await News.find();
-        res.json(news);
-    } catch (err) {
-        res.status(500).json({ error: "Failed to fetch news" });
+        res.status(200).json({ success: true, message: 'Result uploaded successfully' });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to upload result' });
     }
 });
 
