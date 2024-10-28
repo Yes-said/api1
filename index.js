@@ -83,7 +83,11 @@ app.post("/login", async (req, res) => {
                         console.error("JWT signing error:", err);
                         return res.status(500).json({ success: false, message: "Error generating token" });
                     }
-                    res.cookie("token", token).json({ success: true, message: "Login successful", user: userDoc });
+                    res.cookie("token", token).json({
+                        success: true,
+                        message: "Login successful",
+                        user: { id: userDoc._id, name: userDoc.name, identity: userDoc.identity }
+                    });
                 });
             } else {
                 res.status(400).json({ success: false, message: "Incorrect password" });
@@ -99,62 +103,28 @@ app.post("/login", async (req, res) => {
 
 
 // Profile route
-app.get("/profile", (req, res) => {
+app.get("/profile", async (req, res) => {
     const { token } = req.cookies;
     if (token) {
         jwt.verify(token, jwtSecret, {}, async (err, userData) => {
             if (err) {
-                console.error("Token verification failed:", err);
-                return res.status(403).json({ message: 'Unauthorized access' });
+                console.error("JWT verification error:", err);
+                return res.status(403).json({ success: false, message: "Invalid token" });
             }
-            const { name, identity, _id } = await User.findById(userData.id);
-            res.json({ name, identity, _id });
+            try {
+                const { name, identity, _id } = await User.findById(userData.id);
+                res.json({ success: true, user: { id: _id, name, identity } });
+            } catch (error) {
+                console.error("Error retrieving user profile:", error);
+                res.status(500).json({ success: false, message: "An error occurred while fetching the profile" });
+            }
         });
     } else {
-        res.status(401).json({ message: 'No token provided, unauthorized' });
+        res.status(401).json({ success: false, message: "No token provided" });
     }
 });
 
-// Update profile route
-app.put("/update-profile", async (req, res) => {
-    const { token } = req.cookies;
-    const { name, identity, password } = req.body;
 
-    if (!token) {
-        return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    jwt.verify(token, jwtSecret, {}, async (err, userData) => {
-        if (err) {
-            return res.status(401).json({ error: "Invalid token" });
-        }
-
-        try {
-            const user = await User.findById(userData.id);
-
-            if (name) user.name = name;
-            if (identity) user.identity = identity;
-            if (password) {
-                user.password = bcrypt.hashSync(password, bcryptSalt);
-            }
-
-            await user.save();
-            res.json(user);
-        } catch (err) {
-            console.error(err);
-            res.status(500).json({ error: "Failed to update profile" });
-        }
-    });
-});
-
-// Logout route
-app.post("/logout", (req, res) => {
-    res.cookie("token", "", {
-        httpOnly: true,
-        secure: true,
-        sameSite: 'None',
-    }).json(true);
-});
 
 // News routes with role-based authorization
 app.post('/news', authorizeRole('admin'), async (req, res) => {
