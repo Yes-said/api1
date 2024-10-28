@@ -5,13 +5,12 @@ const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 require("dotenv").config();
 const User = require("./models/User.js");
-const Course = require("./models/Course.js");
 const News = require('./models/News');
-const Results = require('./models/Results');
+const Contact = require('./models/Contact'); // Import the Contact model
 const cookieParser = require("cookie-parser");
-const multer = require('multer');
 const path = require('path');
 const app = express();
+
 const bcryptSalt = bcrypt.genSaltSync(10);
 const jwtSecret = "yujlkjhfgdsrzxdtcfwgihopjmjjjnibuvyxrsc";
 
@@ -19,110 +18,104 @@ app.use(express.json());
 app.use(cookieParser());
 app.use(cors({
     credentials: true,
-    origin: (origin, callback) => {
-        if (!origin || ['http://localhost:5173', 'https://kimcresults-ac-ke.vercel.app'].includes(origin)) {
-            callback(null, true);
-        } else {
-            callback(new Error('Not allowed by CORS'));
-        }
-    },
-    allowedHeaders: ['Content-Type', 'Authorization'],
-}));
+    origin: ['http://localhost:5173', 'https://kimcresults-ac-ke.vercel.app'],
+ }));
 
-// Serve static files
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+
 
 mongoose.connect(process.env.MONGO_URL);
 
-// Search functionality
-async function searchDatabase(query) {
-    try {
-        const userResults = await User.find({ name: new RegExp(query, 'i') });
-        const courseResults = await Course.find({ courseName: new RegExp(query, 'i') });
-        return { users: userResults, courses: courseResults };
-    } catch (error) {
-        console.error("Error during search:", error);
-        throw error;
-    }
+// Role-based authorization middleware
+function authorizeRole(role) {
+    return (req, res, next) => {
+        const { token } = req.cookies;
+        if (!token) return res.status(401).json({ error: 'Unauthorized' });
+
+        jwt.verify(token, jwtSecret, (err, userData) => {
+            if (err || userData.role !== role) {
+                return res.status(403).json({ error: 'Access denied' });
+            }
+            req.user = userData;
+            next();
+        });
+    };
 }
 
-app.get("/search", async (req, res) => {
-    const { query } = req.query;
-    try {
-        const results = await searchDatabase(query);
-        res.json(results);
-    } catch (error) {
-        res.status(500).json({ error: "Failed to search the database." });
-    }
-});
-
+// Basic test route
 app.get("/test", (req, res) => {
     res.json("test ok");
 });
 
+// Registration route
+
 app.post("/register", async (req, res) => {
     const { name, identity, password, role } = req.body;
-
-    if (!['student', 'admin'].includes(role)) {
-        return res.status(400).json({ error: "Invalid role" });
-    }
-
     try {
-        const userDoc = new User({ name, identity, password, role });
-        const newUser = await userDoc.save();
-        res.json({ success: true, user: newUser });
-    } catch (e) {
-        console.error("Registration error:", e);
-        if (e.name === 'ValidationError') {
-            return res.status(400).json({ error: e.message });
+        const hashedPassword = bcrypt.hashSync(password, 10);
+        const userDoc = await User.create({
+            name,
+            identity,
+            password: hashedPassword,
+            role
+        });
+        res.status(201).json(userDoc);
+    } catch (error) {
+        if (error.code === 11000) {
+            res.status(400).json({ error: "Identity already exists." });
+        } else if (error.errors) {
+            res.status(400).json({ error: error.errors });
+        } else {
+            res.status(500).json({ error: "An error occurred while registering the user." });
         }
-        res.status(422).json({ error: "Registration failed" });
     }
 });
-
+//login
 app.post("/login", async (req, res) => {
     const { identity, password, role } = req.body;
-    const userDoc = await User.findOne({ identity });
-    if (userDoc) {
-        const passOK = bcrypt.compareSync(password, userDoc.password);
-        if (passOK) {
-            if (userDoc.role !== role) {
-                return res.status(403).json("Permission denied. Please login with the correct role.");
+    try {
+        const userDoc = await User.findOne({ identity, role });
+        if (userDoc) {
+            const passOk = bcrypt.compareSync(password, userDoc.password);
+            if (passOk) {
+                jwt.sign({ identity: userDoc.identity, id: userDoc._id }, jwtSecret, {}, (err, token) => {
+                    if (err) {
+                        console.error("JWT signing error:", err);
+                        return res.status(500).json({ success: false, message: "Error generating token" });
+                    }
+                    res.cookie("token", token).json({ success: true, message: "Login successful", user: userDoc });
+                });
+            } else {
+                res.status(400).json({ success: false, message: "Incorrect password" });
             }
-
-            jwt.sign({
-                identity: userDoc.identity,
-                id: userDoc._id,
-                role: userDoc.role,
-            }, jwtSecret, {}, (err, token) => {
-                if (err) throw err;
-                res.cookie("token", token, {
-                    httpOnly: true,
-                    secure: true,
-                    sameSite: 'None',
-                }).json(userDoc);
-            });
         } else {
-            res.status(422).json("Incorrect password.");
+            res.status(404).json({ success: false, message: "User not found" });
         }
-    } else {
-        res.status(404).json("User not found.");
+    } catch (error) {
+        console.error("Login error:", error);
+        res.status(500).json({ success: false, message: "An error occurred during login" });
     }
 });
 
+
+// Profile route
 app.get("/profile", (req, res) => {
     const { token } = req.cookies;
     if (token) {
         jwt.verify(token, jwtSecret, {}, async (err, userData) => {
-            if (err) throw err;
+            if (err) {
+                console.error("Token verification failed:", err);
+                return res.status(403).json({ message: 'Unauthorized access' });
+            }
             const { name, identity, _id } = await User.findById(userData.id);
             res.json({ name, identity, _id });
         });
     } else {
-        res.json(null);
+        res.status(401).json({ message: 'No token provided, unauthorized' });
     }
 });
 
+// Update profile route
 app.put("/update-profile", async (req, res) => {
     const { token } = req.cookies;
     const { name, identity, password } = req.body;
@@ -154,35 +147,7 @@ app.put("/update-profile", async (req, res) => {
     });
 });
 
-app.delete("/delete-profile", async (req, res) => {
-    const { token } = req.cookies;
-    if (!token) {
-        return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    jwt.verify(token, jwtSecret, {}, async (err, userData) => {
-        if (err) {
-            return res.status(401).json({ error: "Invalid token" });
-        }
-
-        try {
-            const user = await User.findByIdAndDelete(userData.id);
-            if (!user) {
-                return res.status(404).json({ error: "User not found" });
-            }
-
-            res.cookie("token", "", {
-                httpOnly: true,
-                secure: true,
-                sameSite: 'None',
-            }).json({ success: true, message: "Profile deleted successfully" });
-        } catch (err) {
-            console.error(err);
-            res.status(500).json({ error: "Failed to delete profile" });
-        }
-    });
-});
-
+// Logout route
 app.post("/logout", (req, res) => {
     res.cookie("token", "", {
         httpOnly: true,
@@ -191,91 +156,25 @@ app.post("/logout", (req, res) => {
     }).json(true);
 });
 
-app.post("/courses", (req, res) => {
-    const { token } = req.cookies;
-    const {
-        name, courseName, department, year, units, phone, gender
-    } = req.body;
-
-    jwt.verify(token, jwtSecret, {}, async (err, userData) => {
-        if (err) {
-            return res.status(401).json({ error: 'Invalid token' });
-        }
-        const courseDoc = await Course.create({
-            owner: userData.id,
-            name, courseName, department, year, units, phone, gender
+// News routes with role-based authorization
+app.post('/news', authorizeRole('admin'), async (req, res) => {
+    const { title, description, date, createdBy } = req.body;
+    try {
+        const newNews = new News({
+            title,
+            description,
+            date,
+            createdBy
         });
-        res.json(courseDoc);
-    });
-});
-
-app.get("/user-courses", (req, res) => {
-    const { token } = req.cookies;
-    jwt.verify(token, jwtSecret, {}, async (err, userData) => {
-        if (err) return res.status(401).json({ error: 'Invalid token' });
-        const { id } = userData;
-        res.json(await Course.find({ owner: id }));
-    });
-});
-
-app.get("/courses/:id", async (req, res) => {
-    const { id } = req.params;
-    res.json(await Course.findById(id));
-});
-
-app.put("/courses", async (req, res) => {
-    const { token } = req.cookies;
-    const {
-        id, name, courseName, department, year, units, phone, gender
-    } = req.body;
-    jwt.verify(token, jwtSecret, {}, async (err, userData) => {
-        if (err) throw err;
-        const courseDoc = await Course.findById(id);
-        if (userData.id === courseDoc.owner.toString()) {
-            courseDoc.set({
-                name, courseName, department, year, units, phone, gender
-            });
-            await courseDoc.save();
-            res.json("ok");
-        }
-    });
-});
-
-app.get("/courses", async (req, res) => {
-    res.json(await Course.find());
-});
-
-app.get("/result", async (req, res) => {
-    try {
-        const results = await Results.find()
-            .populate('student', 'name')
-            .populate('course', 'courseName department year');
-        res.json(results);
-    } catch (err) {
-        res.status(500).json({ error: "Failed to fetch results" });
-    }
-});
-
-
-app.post('/news', async (req, res) => {
-    try {
-      const { title, description, date, createdBy } = req.body;
-      const newNews = new News({
-        title,
-        description,
-        date,
-        createdBy
-      });
-      const savedNews = await newNews.save();
-      res.status(201).json(savedNews);
+        const savedNews = await newNews.save();
+        res.status(201).json(savedNews);
     } catch (error) {
-      console.error('Error creating news:', error);
-      res.status(500).json({ error: 'Failed to create news' });
+        console.error('Error creating news:', error);
+        res.status(500).json({ error: 'Failed to create news' });
     }
-  });
+});
 
-// News Routes
-// Get all news
+// Fetch all news
 app.get('/news', async (req, res) => {
     try {
         const news = await News.find();
@@ -285,88 +184,6 @@ app.get('/news', async (req, res) => {
         res.status(500).json({ error: 'Failed to fetch news' });
     }
 });
-
-// Get news by ID
-app.get('/news/:id', async (req, res) => {
-    const { id } = req.params;
-    try {
-        const newsItem = await News.findById(id);
-        if (!newsItem) {
-            return res.status(404).json({ error: 'News not found' });
-        }
-        res.json(newsItem);
-    } catch (error) {
-        console.error('Error fetching news:', error);
-        res.status(500).json({ error: 'Failed to fetch news' });
-    }
-});
-
-// Update news
-app.put('/news/:id', async (req, res) => {
-    const { id } = req.params;
-    const { title, description, date, createdBy } = req.body;
-
-    try {
-        const updatedNews = await News.findByIdAndUpdate(id, {
-            title,
-            description,
-            date,
-            createdBy
-        }, { new: true, runValidators: true });
-
-        if (!updatedNews) {
-            return res.status(404).json({ error: 'News not found' });
-        }
-
-        res.json(updatedNews);
-    } catch (error) {
-        console.error('Error updating news:', error);
-        res.status(500).json({ error: 'Failed to update news' });
-    }
-});
-
-// Delete news
-app.delete('/news/:id', async (req, res) => {
-    const { id } = req.params;
-
-    try {
-        const deletedNews = await News.findByIdAndDelete(id);
-        if (!deletedNews) {
-            return res.status(404).json({ error: 'News not found' });
-        }
-
-        res.json({ success: true, message: 'News deleted successfully' });
-    } catch (error) {
-        console.error('Error deleting news:', error);
-        res.status(500).json({ error: 'Failed to delete news' });
-    }
-});
-
-
-const upload = multer({ dest: 'uploads/' });
-
-function isAdmin(req, res, next) {
-    const { token } = req.cookies;
-
-    if (!token) {
-        return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    jwt.verify(token, jwtSecret, {}, async (err, userData) => {
-        if (err) {
-            return res.status(401).json({ error: "Invalid token" });
-        }
-
-        const user = await User.findById(userData.id);
-        if (user.role !== 'admin') {
-            return res.status(403).json({ error: "Permission denied" });
-        }
-
-        next();
-    });
-}
-
-const Contact = require('./models/Contact'); // Import the Contact model
 
 // Contact form submission
 app.post('/contact', async (req, res) => {
@@ -386,32 +203,6 @@ app.post('/contact', async (req, res) => {
     }
 });
 
-
-app.post('/upload-results', isAdmin, upload.single('file'), async (req, res) => {
-    const { student, course, marks } = req.body;
-
-    if (!req.file) {
-        return res.status(400).json({ error: 'Please upload a file' });
-    }
-
-    try {
-        const result = new Results({
-            student,
-            course,
-            marks,
-            pdf: req.file.path
-        });
-
-        await result.save();
-        res.status(200).json({ success: true, message: 'Result uploaded successfully' });
-    } catch (error) {
-        res.status(500).json({ error: 'Failed to upload result' });
-    }
-});
-
 app.listen(4000, () => {
     console.log('Server is running on port 4000');
 });
-
-
-
