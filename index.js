@@ -129,104 +129,91 @@ app.post("/logout", (req,res) => {
 // Profile route
 app.get("/profile", async (req, res) => {
     const { token } = req.cookies;
-    if (token) {
-        jwt.verify(token, jwtSecret, {}, async (err, userData) => {
-            if (err) {
-                console.error("JWT verification error:", err);
-                return res.status(403).json({ success: false, message: "Invalid token" });
-            }
-            try {
-                const { name, identity, _id } = await User.findById(userData.id);
-                res.json({ success: true, user: { id: _id, name, identity } });
-            } catch (error) {
-                console.error("Error retrieving user profile:", error);
-                res.status(500).json({ success: false, message: "An error occurred while fetching the profile" });
-            }
-        });
-    } else {
-        res.status(401).json({ success: false, message: "No token provided" });
-    }
-});
-
-
-// Update profile
-app.put("/profile", async (req, res) => {
-    const { token } = req.cookies;
     if (!token) {
         return res.status(401).json({ success: false, message: "No token provided" });
     }
 
     try {
-        const userData = jwt.verify(token, jwtSecret);
-        const { name, identity } = req.body;
+        const decoded = jwt.verify(token, jwtSecret);
         
-        const updatedUser = await User.findByIdAndUpdate(
-            userData.id,
-            { name, identity },
-            { new: true }
-        );
+        // Use findById instead of findByIdAdmin
+        const user = await User.findById(decoded.id);
 
-        res.json({ 
-            success: true, 
+        if (!user || user.isDeleted) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found or has been deleted"
+            });
+        }
+
+        res.json({
+            success: true,
             user: {
-                id: updatedUser._id,
-                name: updatedUser.name,
-                identity: updatedUser.identity
+                id: user._id,
+                name: user.name,
+                identity: user.identity,
+                role: user.role,
+                course: user.role === 'student' ? user.course : undefined
             }
         });
     } catch (error) {
-        console.error("Profile update error:", error);
-        res.status(500).json({ success: false, message: "Failed to update profile" });
+        console.error("Error retrieving user profile:", error);
+        if (error.name === 'JsonWebTokenError') {
+            return res.status(403).json({ 
+                success: false, 
+                message: "Invalid token" 
+            });
+        }
+        res.status(500).json({ 
+            success: false, 
+            message: "An error occurred while fetching the profile" 
+        });
     }
 });
 
-// Delete profile
-app.delete("/profile", async (req, res) => {
-    const { token } = req.cookies;
-    if (!token) {
-        return res.status(401).json({ success: false, message: "No token provided" });
+// Utility function to verify token and get user
+const getAuthenticatedUser = async (token) => {
+    const decoded = jwt.verify(token, jwtSecret);
+    const user = await User.findById(decoded.id);
+    
+    if (!user || user.isDeleted) {
+        throw new Error('User not found or has been deleted');
     }
+    
+    return user;
+};
 
-    try {
-        const userData = jwt.verify(token, jwtSecret);
-        await User.findByIdAndDelete(userData.id);
-        res.cookie("token", "").json({ success: true });
-    } catch (error) {
-        console.error("Profile deletion error:", error);
-        res.status(500).json({ success: false, message: "Failed to delete profile" });
-    }
-});
-
-
+// Update adminMiddleware to use getAuthenticatedUser
 const adminMiddleware = async (req, res, next) => {
     try {
         const { token } = req.cookies;
         if (!token) {
-            return res.status(401).json({ 
-                success: false, 
-                message: "Authentication required" 
+            return res.status(401).json({
+                success: false,
+                message: "Authentication required"
             });
         }
 
-        const decoded = jwt.verify(token, jwtSecret);
-        const user = await User.findById(decoded.id);
+        const user = await getAuthenticatedUser(token);
 
-        if (!user || user.role !== 'admin') {
-            return res.status(403).json({ 
-                success: false, 
-                message: "Admin access required" 
+        if (user.role !== 'admin') {
+            return res.status(403).json({
+                success: false,
+                message: "Admin access required"
             });
         }
 
         req.user = user;
         next();
     } catch (error) {
-        return res.status(401).json({ 
-            success: false, 
-            message: "Invalid token" 
+        console.error('Admin middleware error:', error);
+        return res.status(401).json({
+            success: false,
+            message: error.message || "Authentication failed"
         });
     }
 };
+
 
 // Backend: Add this route to your Express app
 app.get('/api/check-admin', adminMiddleware, (req, res) => {
@@ -394,53 +381,8 @@ app.get('/api/students/:id', async (req, res) => {
     }
 });
 
-// Delete student
-app.delete('/api/students/:id', async (req, res) => {
-    const { token } = req.cookies;
-    if (!token) {
-        return res.status(401).json({ 
-            success: false, 
-            message: "Authentication required" 
-        });
-    }
 
-    try {
-        // Verify admin access
-        const userData = jwt.verify(token, jwtSecret);
-        const adminUser = await User.findById(userData.id);
-        
-        if (!adminUser || adminUser.role !== 'admin') {
-            return res.status(403).json({ 
-                success: false, 
-                message: "Admin access required" 
-            });
-        }
-
-        // Verify the user being deleted is actually a student
-        const studentToDelete = await User.findById(req.params.id);
-        if (!studentToDelete || studentToDelete.role !== 'student') {
-            return res.status(404).json({ 
-                success: false, 
-                message: "Student not found" 
-            });
-        }
-
-        await User.findByIdAndDelete(req.params.id);
-        
-        res.json({
-            success: true,
-            message: "Student deleted successfully"
-        });
-    } catch (error) {
-        console.error('Error deleting student:', error);
-        res.status(500).json({ 
-            success: false, 
-            message: "Failed to delete student" 
-        });
-    }
-});
-
-// Update student
+//update student
 app.put('/api/students/:id', async (req, res) => {
     const { token } = req.cookies;
     if (!token) {
@@ -462,24 +404,51 @@ app.put('/api/students/:id', async (req, res) => {
             });
         }
 
-        const { name, identity, grade } = req.body;
-
-        // Verify the user being updated is actually a student
-        const student = await User.findById(req.params.id);
-        if (!student || student.role !== 'student') {
-            return res.status(404).json({ 
-                success: false, 
-                message: "Student not found" 
+        const { name, identity, course } = req.body;
+        
+        // Validate required fields
+        if (!name || !identity || !course) {
+            return res.status(400).json({
+                success: false,
+                message: "All fields are required"
             });
         }
 
-        // Check if new identity conflicts with existing users
+        // Validate course enum
+        const validCourses = ['ict', 'nursing', 'clinical medicine'];
+        if (!validCourses.includes(course)) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid course selection"
+            });
+        }
+
+        // Check if student exists
+        const student = await User.findOne({ 
+            _id: req.params.id, 
+            role: 'student',
+            isDeleted: false
+        });
+
+        if (!student) {
+            return res.status(404).json({
+                success: false,
+                message: "Student not found"
+            });
+        }
+
+        // Check if new identity conflicts with existing one (excluding current student)
         if (identity !== student.identity) {
-            const existingUser = await User.findOne({ identity });
+            const existingUser = await User.findOne({ 
+                identity, 
+                _id: { $ne: req.params.id },
+                isDeleted: false
+            });
+            
             if (existingUser) {
-                return res.status(400).json({ 
-                    success: false, 
-                    message: "Student number already exists" 
+                return res.status(400).json({
+                    success: false,
+                    message: "Student number already exists"
                 });
             }
         }
@@ -490,29 +459,544 @@ app.put('/api/students/:id', async (req, res) => {
             {
                 name,
                 identity,
-                grade
+                course
             },
             { 
                 new: true,
-                runValidators: true 
+                runValidators: true,
+                select: '-password'
             }
-        ).select('-password');
+        );
 
         res.json({
             success: true,
+            message: "Student updated successfully",
             data: updatedStudent
         });
+
     } catch (error) {
         console.error('Error updating student:', error);
+        
         if (error.name === 'ValidationError') {
-            return res.status(400).json({ 
-                success: false, 
-                message: error.message 
+            return res.status(400).json({
+                success: false,
+                message: "Validation error",
+                errors: Object.values(error.errors).map(err => err.message)
             });
         }
+
+        if (error.name === 'JsonWebTokenError') {
+            return res.status(401).json({
+                success: false,
+                message: "Invalid authentication token"
+            });
+        }
+
+        res.status(500).json({
+            success: false,
+            message: "Failed to update student"
+        });
+    }
+});
+
+
+
+// Modified delete endpoint with better error handling
+app.delete('/api/users/:id', async (req, res) => {
+    const { token } = req.cookies;
+    if (!token) {
+        return res.status(401).json({ 
+            success: false, 
+            message: "Authentication required" 
+        });
+    }
+
+    try {
+        // Verify admin access
+        const userData = jwt.verify(token, jwtSecret);
+        const adminUser = await User.findById(userData.id);
+        
+        if (!adminUser || adminUser.role !== 'admin') {
+            return res.status(403).json({ 
+                success: false, 
+                message: "Admin access required" 
+            });
+        }
+
+        // Verify the user exists and is a student
+        const studentToDelete = await User.findById(req.params.id);
+        if (!studentToDelete) {
+            return res.status(404).json({ 
+                success: false, 
+                message: "Student not found" 
+            });
+        }
+
+        if (studentToDelete.role !== 'student') {
+            return res.status(403).json({ 
+                success: false, 
+                message: "Can only delete student accounts" 
+            });
+        }
+
+        // Perform the soft delete
+        const updatedStudent = await User.findByIdAndUpdate(
+            req.params.id,
+            {
+                isDeleted: true,
+                deletedAt: new Date()
+            },
+            { new: true } // Return the updated document
+        );
+
+        if (!updatedStudent) {
+            return res.status(500).json({
+                success: false,
+                message: "Failed to update student status"
+            });
+        }
+        
+        res.json({
+            success: true,
+            message: "Student deleted successfully",
+            data: {
+                id: updatedStudent._id,
+                deletedAt: updatedStudent.deletedAt
+            }
+        });
+    } catch (error) {
+        console.error('Error in delete student endpoint:', error);
+        
+        if (error.name === 'JsonWebTokenError') {
+            return res.status(401).json({ 
+                success: false, 
+                message: "Invalid authentication token" 
+            });
+        }
+        
+        if (error.name === 'CastError') {
+            return res.status(400).json({ 
+                success: false, 
+                message: "Invalid student ID format" 
+            });
+        }
+        
         res.status(500).json({ 
             success: false, 
-            message: "Failed to update student" 
+            message: "Failed to delete student",
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+});
+
+
+// Modified get endpoints to handle deleted status
+app.get('/api/students', async (req, res) => {
+    const { token } = req.cookies;
+    if (!token) {
+        return res.status(401).json({ 
+            success: false, 
+            message: "Authentication required" 
+        });
+    }
+
+    try {
+        // Verify admin access
+        const userData = jwt.verify(token, jwtSecret);
+        const adminUser = await User.findById(userData.id);
+        
+        if (!adminUser || adminUser.role !== 'admin') {
+            return res.status(403).json({ 
+                success: false, 
+                message: "Admin access required" 
+            });
+        }
+
+        // Include deleted parameter in query if specified
+        const showDeleted = req.query.showDeleted === 'true';
+        const query = { role: 'student' };
+        if (!showDeleted) {
+            query.isDeleted = false;
+        }
+
+        // Fetch students based on query
+        const students = await User.find(query)
+            .select('-password')
+            .sort({ createdAt: -1 });
+
+        res.json({
+            success: true,
+            data: students
+        });
+    } catch (error) {
+        console.error('Error fetching students:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: "Failed to fetch students" 
+        });
+    }
+});
+
+
+// Create new teacher (Admin only)
+app.post('/manage-teachers/create', async (req, res) => {
+    const { token } = req.cookies;
+    if (!token) {
+        return res.status(401).json({ 
+            success: false, 
+            message: "Authentication required" 
+        });
+    }
+
+    try {
+        // Verify admin access
+        const userData = jwt.verify(token, jwtSecret);
+        const adminUser = await User.findById(userData.id);
+        
+        if (!adminUser || adminUser.role !== 'admin') {
+            return res.status(403).json({ 
+                success: false, 
+                message: "Admin access required" 
+            });
+        }
+
+        const { name, email, password, subject } = req.body;
+        
+        // Validate required fields
+        if (!name || !email || !password || !subject) {
+            return res.status(400).json({
+                success: false,
+                message: "All fields are required"
+            });
+        }
+
+        // Check if email already exists
+        const existingTeacher = await User.findOne({ 
+            email,
+            role: 'teacher',
+            isDeleted: false
+        });
+
+        if (existingTeacher) {
+            return res.status(400).json({
+                success: false,
+                message: "Email already registered"
+            });
+        }
+
+        // Generate unique identity for teacher (e.g., TCH2024001)
+        const teacherCount = await User.countDocuments({ role: 'teacher' });
+        const identity = `TCH${new Date().getFullYear()}${(teacherCount + 1).toString().padStart(3, '0')}`;
+
+        // Hash password
+        const hashedPassword = bcrypt.hashSync(password, bcryptSalt);
+
+        // Create new teacher
+        const newTeacher = new User({
+            name,
+            email,
+            identity,
+            password: hashedPassword,
+            subject,
+            role: 'teacher'
+        });
+
+        await newTeacher.save();
+
+        // Remove password from response
+        const teacherResponse = newTeacher.toObject();
+        delete teacherResponse.password;
+
+        res.status(201).json({
+            success: true,
+            message: "Teacher created successfully",
+            data: teacherResponse
+        });
+
+    } catch (error) {
+        console.error('Error creating teacher:', error);
+        
+        if (error.name === 'ValidationError') {
+            return res.status(400).json({
+                success: false,
+                message: "Validation error",
+                errors: Object.values(error.errors).map(err => err.message)
+            });
+        }
+
+        if (error.code === 11000) {
+            return res.status(400).json({
+                success: false,
+                message: "Email or identity already exists"
+            });
+        }
+
+        res.status(500).json({
+            success: false,
+            message: "Failed to create teacher"
+        });
+    }
+});
+
+// Get all teachers
+app.get('/manage-teachers', async (req, res) => {
+    const { token } = req.cookies;
+    if (!token) {
+        return res.status(401).json({ 
+            success: false, 
+            message: "Authentication required" 
+        });
+    }
+
+    try {
+        // Verify admin access
+        const userData = jwt.verify(token, jwtSecret);
+        const adminUser = await User.findById(userData.id);
+        
+        if (!adminUser || adminUser.role !== 'admin') {
+            return res.status(403).json({ 
+                success: false, 
+                message: "Admin access required" 
+            });
+        }
+
+        // Include deleted parameter in query if specified
+        const showDeleted = req.query.showDeleted === 'true';
+        const query = { role: 'teacher' };
+        if (!showDeleted) {
+            query.isDeleted = false;
+        }
+
+        // Fetch teachers
+        const teachers = await User.find(query)
+            .select('-password')
+            .sort({ createdAt: -1 });
+
+        res.json({
+            success: true,
+            data: teachers
+        });
+    } catch (error) {
+        console.error('Error fetching teachers:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: "Failed to fetch teachers" 
+        });
+    }
+});
+
+// Get single teacher
+app.get('/manage-teachers/:id', async (req, res) => {
+    const { token } = req.cookies;
+    if (!token) {
+        return res.status(401).json({ 
+            success: false, 
+            message: "Authentication required" 
+        });
+    }
+
+    try {
+        // Verify admin access
+        const userData = jwt.verify(token, jwtSecret);
+        const adminUser = await User.findById(userData.id);
+        
+        if (!adminUser || adminUser.role !== 'admin') {
+            return res.status(403).json({ 
+                success: false, 
+                message: "Admin access required" 
+            });
+        }
+
+        const teacher = await User.findOne({ 
+            _id: req.params.id, 
+            role: 'teacher' 
+        }).select('-password');
+
+        if (!teacher) {
+            return res.status(404).json({ 
+                success: false, 
+                message: "Teacher not found" 
+            });
+        }
+
+        res.json({
+            success: true,
+            data: teacher
+        });
+    } catch (error) {
+        console.error('Error fetching teacher:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: "Failed to fetch teacher" 
+        });
+    }
+});
+
+// Update teacher
+app.put('/manage-teachers/:id', async (req, res) => {
+    const { token } = req.cookies;
+    if (!token) {
+        return res.status(401).json({ 
+            success: false, 
+            message: "Authentication required" 
+        });
+    }
+
+    try {
+        // Verify admin access
+        const userData = jwt.verify(token, jwtSecret);
+        const adminUser = await User.findById(userData.id);
+        
+        if (!adminUser || adminUser.role !== 'admin') {
+            return res.status(403).json({ 
+                success: false, 
+                message: "Admin access required" 
+            });
+        }
+
+        const { name, email, subject } = req.body;
+        
+        // Validate required fields
+        if (!name || !email || !subject) {
+            return res.status(400).json({
+                success: false,
+                message: "All fields are required"
+            });
+        }
+
+        // Find the teacher
+        const teacher = await User.findOne({ 
+            _id: req.params.id, 
+            role: 'teacher',
+            isDeleted: false
+        });
+
+        if (!teacher) {
+            return res.status(404).json({
+                success: false,
+                message: "Teacher not found"
+            });
+        }
+
+        // Check if new email conflicts with existing one
+        if (email !== teacher.email) {
+            const existingTeacher = await User.findOne({ 
+                email, 
+                _id: { $ne: req.params.id },
+                role: 'teacher',
+                isDeleted: false
+            });
+            
+            if (existingTeacher) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Email already exists"
+                });
+            }
+        }
+
+        // Update teacher
+        const updatedTeacher = await User.findByIdAndUpdate(
+            req.params.id,
+            {
+                name,
+                email,
+                subject
+            },
+            { 
+                new: true,
+                runValidators: true,
+                select: '-password'
+            }
+        );
+
+        res.json({
+            success: true,
+            message: "Teacher updated successfully",
+            data: updatedTeacher
+        });
+
+    } catch (error) {
+        console.error('Error updating teacher:', error);
+        
+        if (error.name === 'ValidationError') {
+            return res.status(400).json({
+                success: false,
+                message: "Validation error",
+                errors: Object.values(error.errors).map(err => err.message)
+            });
+        }
+
+        res.status(500).json({
+            success: false,
+            message: "Failed to update teacher"
+        });
+    }
+});
+
+/// Delete teacher (soft delete)
+app.delete('/api/users/:id', async (req, res) => {
+    const { token } = req.cookies;
+    
+    if (!token) {
+        return res.status(401).json({
+            success: false,
+            message: "Authentication required"
+        });
+    }
+
+    try {
+        // Verify admin access
+        const userData = jwt.verify(token, jwtSecret);
+        const adminUser = await User.findById(userData.id);
+
+        if (!adminUser || adminUser.role !== 'admin') {
+            return res.status(403).json({
+                success: false,
+                message: "Admin access required"
+            });
+        }
+
+        // Verify the teacher exists and is actually a teacher
+        const userToDelete = await User.findById(req.params.id);
+
+        if (!userToDelete) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found"
+            });
+        }
+
+        if (userToDelete.role !== 'teacher') {
+            return res.status(403).json({
+                success: false,
+                message: "Can only delete teacher accounts from this endpoint"
+            });
+        }
+
+        // Perform soft delete
+        const updatedUser = await User.findByIdAndUpdate(
+            req.params.id,
+            {
+                isDeleted: true,
+                deletedAt: new Date()
+            },
+            { new: true }
+        );
+
+        res.json({
+            success: true,
+            message: "Teacher deleted successfully",
+            data: {
+                id: updatedUser._id,
+                deletedAt: updatedUser.deletedAt
+            }
+        });
+    } catch (error) {
+        console.error('Error deleting teacher:', error);
+        res.status(500).json({
+            success: false,
+            message: "Failed to delete teacher"
         });
     }
 });
@@ -613,6 +1097,235 @@ app.delete('/courses/:id', async (req, res) => {
         });
     }
 });
+
+
+// Authentication middleware
+const authMiddleware = async (req, res, next) => {
+    const { token } = req.cookies;
+    
+    if (!token) {
+        return res.status(401).json({ 
+            success: false, 
+            message: "Authentication required" 
+        });
+    }
+
+    try {
+        // Verify token and decode user data
+        const userData = jwt.verify(token, jwtSecret);
+        
+        // Find user in database
+        const user = await User.findById(userData.id);
+        
+        if (!user || user.isDeleted) {
+            return res.status(401).json({
+                success: false,
+                message: "User not found or has been deleted"
+            });
+        }
+
+        // Attach user to request object
+        req.user = user;
+        next();
+    } catch (error) {
+        console.error('Authentication error:', error);
+        
+        if (error.name === 'JsonWebTokenError') {
+            return res.status(401).json({ 
+                success: false, 
+                message: "Invalid authentication token" 
+            });
+        }
+        
+        return res.status(500).json({ 
+            success: false, 
+            message: "Authentication failed" 
+        });
+    }
+};
+
+
+
+// Update result
+app.put('/results/:id',  async (req, res) => {
+    try {
+        const {
+            studentId,
+            studentName,
+            courseId,
+            courseName,
+            score,
+            semester,
+            academicYear
+        } = req.body;
+
+        // Check if result exists
+        const result = await Results.findById(req.params.id);
+        if (!result) {
+            return res.status(404).json({
+                success: false,
+                message: "Result not found"
+            });
+        }
+
+        // Update the result
+        const updatedResult = await Results.findByIdAndUpdate(
+            req.params.id,
+            {
+                studentId,
+                studentName,
+                courseId,
+                courseName,
+                score,
+                semester,
+                academicYear,
+                updatedBy: req.user.id,
+                updatedAt: new Date()
+            },
+            {
+                new: true,
+                runValidators: true
+            }
+        );
+
+        res.json({
+            success: true,
+            message: "Result updated successfully",
+            data: updatedResult
+        });
+
+    } catch (error) {
+        console.error('Error updating result:', error);
+        
+        if (error.name === 'ValidationError') {
+            return res.status(400).json({
+                success: false,
+                message: "Validation error",
+                errors: Object.values(error.errors).map(err => err.message)
+            });
+        }
+
+        res.status(500).json({
+            success: false,
+            message: "Failed to update result"
+        });
+    }
+});
+
+// Delete result
+app.delete('/results/:id',  async (req, res) => {
+    try {
+        // Check if result exists
+        const result = await Results.findById(req.params.id);
+        if (!result) {
+            return res.status(404).json({
+                success: false,
+                message: "Result not found"
+            });
+        }
+
+        // Implement soft delete
+        const deletedResult = await Results.findByIdAndUpdate(
+            req.params.id,
+            {
+                isDeleted: true,
+                deletedAt: new Date(),
+                deletedBy: req.user.id
+            },
+            { new: true }
+        );
+
+        res.json({
+            success: true,
+            message: "Result deleted successfully",
+            data: {
+                id: deletedResult._id,
+                deletedAt: deletedResult.deletedAt
+            }
+        });
+
+    } catch (error) {
+        console.error('Error deleting result:', error);
+        res.status(500).json({
+            success: false,
+            message: "Failed to delete result"
+        });
+    }
+});
+
+// Get single result
+app.get('/results/:id', async (req, res) => {
+    try {
+        const result = await Results.findOne({
+            _id: req.params.id,
+            isDeleted: false
+        });
+
+        if (!result) {
+            return res.status(404).json({
+                success: false,
+                message: "Result not found"
+            });
+        }
+
+        res.json({
+            success: true,
+            data: result
+        });
+
+    } catch (error) {
+        console.error('Error fetching result:', error);
+        res.status(500).json({
+            success: false,
+            message: "Failed to fetch result"
+        });
+    }
+});
+
+// Get results by student
+app.get('/results/student/:studentId',  async (req, res) => {
+    try {
+        const results = await Results.find({
+            studentId: req.params.studentId,
+            isDeleted: false
+        }).sort({ createdAt: -1 });
+
+        res.json({
+            success: true,
+            data: results
+        });
+
+    } catch (error) {
+        console.error('Error fetching student results:', error);
+        res.status(500).json({
+            success: false,
+            message: "Failed to fetch student results"
+        });
+    }
+});
+
+// Get results by course
+app.get('/results/course/:courseId', async (req, res) => {
+    try {
+        const results = await Results.find({
+            courseId: req.params.courseId,
+            isDeleted: false
+        }).sort({ createdAt: -1 });
+
+        res.json({
+            success: true,
+            data: results
+        });
+
+    } catch (error) {
+        console.error('Error fetching course results:', error);
+        res.status(500).json({
+            success: false,
+            message: "Failed to fetch course results"
+        });
+    }
+});
+
 
 // Fetch all news
 app.get('/news', async (req, res) => {
