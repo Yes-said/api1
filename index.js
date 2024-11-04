@@ -20,7 +20,7 @@ app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'dist')));
 app.use(cors({
     credentials: true,
-    origin: ['http://localhost:5173', 'https://kimcresults-ac-ke.vercel.app'],
+    origin: 'http://localhost:5173',
  }));
 
 // Role-based authorization middleware
