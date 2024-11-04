@@ -38,20 +38,15 @@ function authorizeRole(role) {
         });
     };
 }
-
-
-
-
-
 // Basic test route
-app.get("/test", (req, res) => {
+app.get("/api/test", (req, res) => {
     mongoose.connect(process.env.MONGO_URL);
     res.json("test ok");
 });
 
 // Registration route
 
-app.post("/register", async (req, res) => {
+app.post("/api/register", async (req, res) => {
     mongoose.connect(process.env.MONGO_URL);
     const { name, identity, password, role } = req.body;
     try {
@@ -74,7 +69,7 @@ app.post("/register", async (req, res) => {
     }
 });
 //login
-app.post("/login", async (req, res) => {
+app.post("/api/login", async (req, res) => {
     mongoose.connect(process.env.MONGO_URL);
     const { identity, password, role } = req.body;
     try {
@@ -121,12 +116,12 @@ app.post("/login", async (req, res) => {
 });
 
 
-app.post("/logout", (req,res) => {
+app.post("/api/logout", (req,res) => {
     res.cookie("token", "").json(true);
 })
 
 // Profile route
-app.get("/profile", async (req, res) => {
+app.get("/api/profile", async (req, res) => {
     mongoose.connect(process.env.MONGO_URL);
     const { token } = req.cookies;
     if (!token) {
@@ -222,7 +217,7 @@ app.get('/api/check-admin', adminMiddleware, (req, res) => {
 });
 
 // News routes with role-based authorization
-app.post('/news', authorizeRole('admin'), async (req, res) => {
+app.post('/api/news', authorizeRole('admin'), async (req, res) => {
     mongoose.connect(process.env.MONGO_URL);
     const { title, description, date, createdBy } = req.body;
     try {
@@ -240,7 +235,7 @@ app.post('/news', authorizeRole('admin'), async (req, res) => {
     }
 });
 
-app.post("/student", async (req, res) => {
+app.post("/api/student", async (req, res) => {
     mongoose.connect(process.env.MONGO_URL);
   try {
     const { name, identity, password, course } = req.body;
@@ -647,7 +642,7 @@ app.get('/api/students', async (req, res) => {
 
 
 // Create new teacher (Admin only)
-app.post('/manage-teachers/create', async (req, res) => {
+app.post('/api/manage-teachers/create', async (req, res) => {
     mongoose.connect(process.env.MONGO_URL);
     const { token } = req.cookies;
     if (!token) {
@@ -748,7 +743,7 @@ app.post('/manage-teachers/create', async (req, res) => {
 });
 
 // Get all teachers
-app.get('/manage-teachers', async (req, res) => {
+app.get('/api/manage-teachers', async (req, res) => {
     mongoose.connect(process.env.MONGO_URL);
     const { token } = req.cookies;
     if (!token) {
@@ -796,7 +791,7 @@ app.get('/manage-teachers', async (req, res) => {
 });
 
 // Get single teacher
-app.get('/manage-teachers/:id', async (req, res) => {
+app.get('/api/manage-teachers/:id', async (req, res) => {
     mongoose.connect(process.env.MONGO_URL);
     const { token } = req.cookies;
     if (!token) {
@@ -844,7 +839,7 @@ app.get('/manage-teachers/:id', async (req, res) => {
 });
 
 // Update teacher
-app.put('/manage-teachers/:id', async (req, res) => {
+app.put('/api/manage-teachers/:id', async (req, res) => {
     mongoose.connect(process.env.MONGO_URL);
     const { token } = req.cookies;
     if (!token) {
@@ -1015,7 +1010,7 @@ app.delete('/api/users/:id', async (req, res) => {
 });
 
 //addnewcourse route
-app.post('/courses', async (req, res) => {
+app.post('/api/courses', async (req, res) => {
     mongoose.connect(process.env.MONGO_URL);
     const { token } = req.cookies;
     if (!token) {
@@ -1050,7 +1045,7 @@ app.post('/courses', async (req, res) => {
 });
 
 // Get all courses
-app.get('/courses', async (req, res) => {
+app.get('/api/courses', async (req, res) => {
     mongoose.connect(process.env.MONGO_URL);
     try {
         const courses = await Course.find()
@@ -1071,7 +1066,7 @@ app.get('/courses', async (req, res) => {
 });
 
 // Delete a course
-app.delete('/courses/:id', async (req, res) => {
+app.delete('/api/courses/:id', async (req, res) => {
     mongoose.connect(process.env.MONGO_URL);
     const { token } = req.cookies;
     if (!token) {
@@ -1163,7 +1158,7 @@ const authMiddleware = async (req, res, next) => {
 
 
 // Update result
-app.put('/results/:id',  async (req, res) => {
+app.put('/api/results/:id',  async (req, res) => {
     mongoose.connect(process.env.MONGO_URL);
     try {
         const {
@@ -1230,7 +1225,7 @@ app.put('/results/:id',  async (req, res) => {
 });
 
 // Delete result
-app.delete('/results/:id',  async (req, res) => {
+app.delete('/api/results/:id',  async (req, res) => {
     mongoose.connect(process.env.MONGO_URL);
     try {
         // Check if result exists
@@ -1272,7 +1267,7 @@ app.delete('/results/:id',  async (req, res) => {
 });
 
 // Get single result
-app.get('/results/:id', async (req, res) => {
+app.get('/api/results/:id', async (req, res) => {
     mongoose.connect(process.env.MONGO_URL);
     try {
         const result = await Results.findOne({
@@ -1302,7 +1297,7 @@ app.get('/results/:id', async (req, res) => {
 });
 
 // Get results by student
-app.get('/results/student/:studentId',  async (req, res) => {
+app.get('/api/results/student/:studentId',  async (req, res) => {
     mongoose.connect(process.env.MONGO_URL);
     try {
         const results = await Results.find({
@@ -1325,7 +1320,7 @@ app.get('/results/student/:studentId',  async (req, res) => {
 });
 
 // Get results by course
-app.get('/results/course/:courseId', async (req, res) => {
+app.get('/api/results/course/:courseId', async (req, res) => {
     mongoose.connect(process.env.MONGO_URL);
     try {
         const results = await Results.find({
@@ -1349,7 +1344,7 @@ app.get('/results/course/:courseId', async (req, res) => {
 
 
 // Fetch all news
-app.get('/news', async (req, res) => {
+app.get('/api/news', async (req, res) => {
     mongoose.connect(process.env.MONGO_URL);
     try {
         const news = await News.find();
@@ -1361,7 +1356,7 @@ app.get('/news', async (req, res) => {
 });
 
 // Contact form submission
-app.post('/contact', async (req, res) => {
+app.post('/api/contact', async (req, res) => {
     mongoose.connect(process.env.MONGO_URL);
     const { name, email, message } = req.body;
 
