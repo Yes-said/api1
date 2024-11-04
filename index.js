@@ -20,7 +20,7 @@ app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'dist')));
 app.use(cors({
     credentials: true,
-    origin: 'http://localhost:5173',
+    origin: ['http://localhost:5173', 'https://saiddev.vercel.app'],
  }));
 
 // Role-based authorization middleware
