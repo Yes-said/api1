@@ -17,15 +17,11 @@ const jwtSecret = "yujlkjhfgdsrzxdtcfwgihopjmjjjnibuvyxrsc";
 
 app.use(express.json());
 app.use(cookieParser());
+app.use(express.static(path.join(__dirname, 'dist')));
 app.use(cors({
     credentials: true,
     origin: ['http://localhost:5173', 'https://kimcresults-ac-ke.vercel.app'],
  }));
-
-
-
-
-mongoose.connect(process.env.MONGO_URL);
 
 // Role-based authorization middleware
 function authorizeRole(role) {
@@ -49,12 +45,14 @@ function authorizeRole(role) {
 
 // Basic test route
 app.get("/test", (req, res) => {
+    mongoose.connect(process.env.MONGO_URL);
     res.json("test ok");
 });
 
 // Registration route
 
 app.post("/register", async (req, res) => {
+    mongoose.connect(process.env.MONGO_URL);
     const { name, identity, password, role } = req.body;
     try {
         const hashedPassword = bcrypt.hashSync(password, 10);
@@ -77,6 +75,7 @@ app.post("/register", async (req, res) => {
 });
 //login
 app.post("/login", async (req, res) => {
+    mongoose.connect(process.env.MONGO_URL);
     const { identity, password, role } = req.body;
     try {
         const userDoc = await User.findOne({ identity, role });
@@ -128,6 +127,7 @@ app.post("/logout", (req,res) => {
 
 // Profile route
 app.get("/profile", async (req, res) => {
+    mongoose.connect(process.env.MONGO_URL);
     const { token } = req.cookies;
     if (!token) {
         return res.status(401).json({ success: false, message: "No token provided" });
@@ -217,11 +217,13 @@ const adminMiddleware = async (req, res, next) => {
 
 // Backend: Add this route to your Express app
 app.get('/api/check-admin', adminMiddleware, (req, res) => {
+    mongoose.connect(process.env.MONGO_URL);
     res.json({ success: true, user: req.user });
 });
 
 // News routes with role-based authorization
 app.post('/news', authorizeRole('admin'), async (req, res) => {
+    mongoose.connect(process.env.MONGO_URL);
     const { title, description, date, createdBy } = req.body;
     try {
         const newNews = new News({
@@ -239,6 +241,7 @@ app.post('/news', authorizeRole('admin'), async (req, res) => {
 });
 
 app.post("/student", async (req, res) => {
+    mongoose.connect(process.env.MONGO_URL);
   try {
     const { name, identity, password, course } = req.body;
     
@@ -296,6 +299,7 @@ app.post("/student", async (req, res) => {
 
 // Get all students (filtered from users collection)
 app.get('/api/students', async (req, res) => {
+    mongoose.connect(process.env.MONGO_URL);
     const { token } = req.cookies;
     if (!token) {
         return res.status(401).json({ 
@@ -336,6 +340,7 @@ app.get('/api/students', async (req, res) => {
 
 // Get single student by ID
 app.get('/api/students/:id', async (req, res) => {
+    mongoose.connect(process.env.MONGO_URL);
     const { token } = req.cookies;
     if (!token) {
         return res.status(401).json({ 
@@ -384,6 +389,7 @@ app.get('/api/students/:id', async (req, res) => {
 
 //update student
 app.put('/api/students/:id', async (req, res) => {
+    mongoose.connect(process.env.MONGO_URL);
     const { token } = req.cookies;
     if (!token) {
         return res.status(401).json({ 
@@ -503,6 +509,7 @@ app.put('/api/students/:id', async (req, res) => {
 
 // Modified delete endpoint with better error handling
 app.delete('/api/users/:id', async (req, res) => {
+    mongoose.connect(process.env.MONGO_URL);
     const { token } = req.cookies;
     if (!token) {
         return res.status(401).json({ 
@@ -592,6 +599,7 @@ app.delete('/api/users/:id', async (req, res) => {
 
 // Modified get endpoints to handle deleted status
 app.get('/api/students', async (req, res) => {
+    mongoose.connect(process.env.MONGO_URL);
     const { token } = req.cookies;
     if (!token) {
         return res.status(401).json({ 
@@ -640,6 +648,7 @@ app.get('/api/students', async (req, res) => {
 
 // Create new teacher (Admin only)
 app.post('/manage-teachers/create', async (req, res) => {
+    mongoose.connect(process.env.MONGO_URL);
     const { token } = req.cookies;
     if (!token) {
         return res.status(401).json({ 
@@ -740,6 +749,7 @@ app.post('/manage-teachers/create', async (req, res) => {
 
 // Get all teachers
 app.get('/manage-teachers', async (req, res) => {
+    mongoose.connect(process.env.MONGO_URL);
     const { token } = req.cookies;
     if (!token) {
         return res.status(401).json({ 
@@ -787,6 +797,7 @@ app.get('/manage-teachers', async (req, res) => {
 
 // Get single teacher
 app.get('/manage-teachers/:id', async (req, res) => {
+    mongoose.connect(process.env.MONGO_URL);
     const { token } = req.cookies;
     if (!token) {
         return res.status(401).json({ 
@@ -834,6 +845,7 @@ app.get('/manage-teachers/:id', async (req, res) => {
 
 // Update teacher
 app.put('/manage-teachers/:id', async (req, res) => {
+    mongoose.connect(process.env.MONGO_URL);
     const { token } = req.cookies;
     if (!token) {
         return res.status(401).json({ 
@@ -936,6 +948,7 @@ app.put('/manage-teachers/:id', async (req, res) => {
 
 /// Delete teacher (soft delete)
 app.delete('/api/users/:id', async (req, res) => {
+    mongoose.connect(process.env.MONGO_URL);
     const { token } = req.cookies;
     
     if (!token) {
@@ -1003,6 +1016,7 @@ app.delete('/api/users/:id', async (req, res) => {
 
 //addnewcourse route
 app.post('/courses', async (req, res) => {
+    mongoose.connect(process.env.MONGO_URL);
     const { token } = req.cookies;
     if (!token) {
         return res.status(401).json({ success: false, message: "No token provided" });
@@ -1037,6 +1051,7 @@ app.post('/courses', async (req, res) => {
 
 // Get all courses
 app.get('/courses', async (req, res) => {
+    mongoose.connect(process.env.MONGO_URL);
     try {
         const courses = await Course.find()
             .sort({ createdAt: -1 }) // Sort by newest first
@@ -1057,6 +1072,7 @@ app.get('/courses', async (req, res) => {
 
 // Delete a course
 app.delete('/courses/:id', async (req, res) => {
+    mongoose.connect(process.env.MONGO_URL);
     const { token } = req.cookies;
     if (!token) {
         return res.status(401).json({ 
@@ -1148,6 +1164,7 @@ const authMiddleware = async (req, res, next) => {
 
 // Update result
 app.put('/results/:id',  async (req, res) => {
+    mongoose.connect(process.env.MONGO_URL);
     try {
         const {
             studentId,
@@ -1214,6 +1231,7 @@ app.put('/results/:id',  async (req, res) => {
 
 // Delete result
 app.delete('/results/:id',  async (req, res) => {
+    mongoose.connect(process.env.MONGO_URL);
     try {
         // Check if result exists
         const result = await Results.findById(req.params.id);
@@ -1255,6 +1273,7 @@ app.delete('/results/:id',  async (req, res) => {
 
 // Get single result
 app.get('/results/:id', async (req, res) => {
+    mongoose.connect(process.env.MONGO_URL);
     try {
         const result = await Results.findOne({
             _id: req.params.id,
@@ -1284,6 +1303,7 @@ app.get('/results/:id', async (req, res) => {
 
 // Get results by student
 app.get('/results/student/:studentId',  async (req, res) => {
+    mongoose.connect(process.env.MONGO_URL);
     try {
         const results = await Results.find({
             studentId: req.params.studentId,
@@ -1306,6 +1326,7 @@ app.get('/results/student/:studentId',  async (req, res) => {
 
 // Get results by course
 app.get('/results/course/:courseId', async (req, res) => {
+    mongoose.connect(process.env.MONGO_URL);
     try {
         const results = await Results.find({
             courseId: req.params.courseId,
@@ -1329,6 +1350,7 @@ app.get('/results/course/:courseId', async (req, res) => {
 
 // Fetch all news
 app.get('/news', async (req, res) => {
+    mongoose.connect(process.env.MONGO_URL);
     try {
         const news = await News.find();
         res.json(news);
@@ -1340,6 +1362,7 @@ app.get('/news', async (req, res) => {
 
 // Contact form submission
 app.post('/contact', async (req, res) => {
+    mongoose.connect(process.env.MONGO_URL);
     const { name, email, message } = req.body;
 
     try {
